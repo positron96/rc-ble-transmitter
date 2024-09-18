@@ -1,24 +1,31 @@
 #include <Arduino.h>
 
+#include <TFT_eSPI.h>       // Hardware-specific library
+TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
+
 #include <BLEDevice.h>
 //#include "BLEScan.h"
 
 // The remote service we wish to connect to.
-static BLEUUID serviceUUID("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
+static BLEUUID serviceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 // The characteristic of the remote service we are interested in.
-static BLEUUID    charUUID("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+static BLEUUID    charUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+
+static BLEUUID batService("180F");
+static BLEUUID batChar("2A19");
 
 static bool doConnect = false;
 static bool connected = false;
-static bool doScan = false;
+static bool doScan = true;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
 static BLEAdvertisedDevice* myDevice;
 
 static void notifyCallback(
-  BLERemoteCharacteristic* pBLERemoteCharacteristic,
-  uint8_t* pData,
-  size_t length,
-  bool isNotify) {
+    BLERemoteCharacteristic* pBLERemoteCharacteristic,
+    uint8_t* pData,
+    size_t length,
+    bool isNotify
+) {
     Serial.print("Notify callback for characteristic ");
     Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
     Serial.print(" of data length ");
@@ -94,8 +101,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
    * Called for each advertising BLE server.
    */
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    Serial.print("BLE Advertised Device found: ");
-    Serial.println(advertisedDevice.toString().c_str());
+    //Serial.print("BLE Advertised Device found: ");
+    //Serial.println(advertisedDevice.toString().c_str());
 
     // We have found a device, let us now see if it contains the service we are looking for.
     if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
@@ -111,6 +118,15 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
 
 void setup() {
+
+  tft.init();
+
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 0, 4);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.println("BLE Example");
+
+
   Serial.begin(115200);
   Serial.println("Starting Arduino BLE Client application...");
   BLEDevice::init("");
@@ -145,8 +161,10 @@ void loop() {
   // If we are connected to a peer BLE Server, update the characteristic each time we are reached
   // with the current time since boot.
   if (connected) {
-    String newValue = "Time since boot: " + String(millis()/1000);
-    Serial.println("Setting new characteristic value to \"" + newValue + "\"");
+    static int v = 0;
+    v = 255-v;
+    String newValue = String("2=") + v + "\n";
+    Serial.println("Sending data");
 
     // Set the characteristic's value to be the array of bytes that is actually a string.
     pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
