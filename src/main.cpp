@@ -3,174 +3,363 @@
 #include <TFT_eSPI.h>       // Hardware-specific library
 TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
 
-#include <BLEDevice.h>
-//#include "BLEScan.h"
+#include <NimBLEDevice.h>
+
 
 // The remote service we wish to connect to.
-static BLEUUID serviceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID serviceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 // The characteristic of the remote service we are interested in.
-static BLEUUID    charUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID  charUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
 
-static BLEUUID batService("180F");
-static BLEUUID batChar("2A19");
+static NimBLEUUID batService("180F");
+static NimBLEUUID batChar("2A19");
+
+
+void scanEndedCB(NimBLEScanResults results);
+
+static NimBLEAdvertisedDevice* advDevice;
 
 static bool doConnect = false;
-static bool connected = false;
-static bool doScan = true;
-static BLERemoteCharacteristic* pRemoteCharacteristic;
-static BLEAdvertisedDevice* myDevice;
+static uint32_t scanTime = 0; /** 0 = scan forever */
 
-static void notifyCallback(
-    BLERemoteCharacteristic* pBLERemoteCharacteristic,
-    uint8_t* pData,
-    size_t length,
-    bool isNotify
-) {
-    Serial.print("Notify callback for characteristic ");
-    Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-    Serial.print(" of data length ");
-    Serial.println(length);
-    Serial.print("data: ");
-    Serial.write(pData, length);
-    Serial.println();
-}
 
-class MyClientCallback : public BLEClientCallbacks {
-  void onConnect(BLEClient* pclient) {
-  }
+/**  None of these are required as they will be handled by the library with defaults. **
+ **                       Remove as you see fit for your needs                        */
+class ClientCallbacks : public NimBLEClientCallbacks {
+    void onConnect(NimBLEClient* pClient) {
+        Serial.println("Connected");
+        /** After connection we should change the parameters if we don't need fast response times.
+         *  These settings are 150ms interval, 0 latency, 450ms timout.
+         *  Timeout should be a multiple of the interval, minimum is 100ms.
+         *  I find a multiple of 3-5 * the interval works best for quick response/reconnect.
+         *  Min interval: 120 * 1.25ms = 150, Max interval: 120 * 1.25ms = 150, 0 latency, 60 * 10ms = 600ms timeout
+         */
+        pClient->updateConnParams(120,120,0,60);
+    };
 
-  void onDisconnect(BLEClient* pclient) {
-    connected = false;
-    Serial.println("onDisconnect");
-  }
+    void onDisconnect(NimBLEClient* pClient) {
+        Serial.print(pClient->getPeerAddress().toString().c_str());
+        Serial.println(" Disconnected - Starting scan");
+        NimBLEDevice::getScan()->start(scanTime, scanEndedCB);
+    };
+
+    /** Called when the peripheral requests a change to the connection parameters.
+     *  Return true to accept and apply them or false to reject and keep
+     *  the currently used parameters. Default will return true.
+     */
+    bool onConnParamsUpdateRequest(NimBLEClient* pClient, const ble_gap_upd_params* params) {
+        if(params->itvl_min < 24) { /** 1.25ms units */
+            return false;
+        } else if(params->itvl_max > 40) { /** 1.25ms units */
+            return false;
+        } else if(params->latency > 2) { /** Number of intervals allowed to skip */
+            return false;
+        } else if(params->supervision_timeout > 100) { /** 10ms units */
+            return false;
+        }
+
+        return true;
+    };
+
+    /********************* Security handled here **********************
+    ****** Note: these are the same return values as defaults ********/
+    uint32_t onPassKeyRequest(){
+        Serial.println("Client Passkey Request");
+        /** return the passkey to send to the server */
+        return 123456;
+    };
+
+    bool onConfirmPIN(uint32_t pass_key){
+        Serial.print("The passkey YES/NO number: ");
+        Serial.println(pass_key);
+    /** Return false if passkeys don't match. */
+        return true;
+    };
+
+    /** Pairing process complete, we can check the results in ble_gap_conn_desc */
+    void onAuthenticationComplete(ble_gap_conn_desc* desc){
+        if(!desc->sec_state.encrypted) {
+            Serial.println("Encrypt connection failed - disconnecting");
+            /** Find the client with the connection handle provided in desc */
+            NimBLEDevice::getClientByID(desc->conn_handle)->disconnect();
+            return;
+        }
+    };
 };
 
-bool connectToServer() {
-    Serial.print("Forming a connection to ");
-    Serial.println(myDevice->getAddress().toString().c_str());
 
-    BLEClient*  pClient  = BLEDevice::createClient();
-    Serial.println(" - Created client");
+/** Define a class to handle the callbacks when advertisments are received */
+class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 
-    pClient->setClientCallbacks(new MyClientCallback());
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+        Serial.print("Advertised Device found: ");
+        Serial.println(advertisedDevice->toString().c_str());
+        if(advertisedDevice->isAdvertisingService(serviceUUID))  {
+            Serial.println("Found Our Service");
+            /** stop scan before connecting */
+            NimBLEDevice::getScan()->stop();
+            /** Save the device reference in a global for the client to use*/
+            advDevice = advertisedDevice;
+            /** Ready to connect now */
+            doConnect = true;
+        }
+    };
+};
 
-    // Connect to the remove BLE Server.
-    pClient->connect(myDevice);  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-    Serial.println(" - Connected to server");
-    pClient->setMTU(517); //set client to request maximum MTU from server (default is 23 otherwise)
 
-    // Obtain a reference to the service we are after in the remote BLE server.
-    BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
-    if (pRemoteService == nullptr) {
-      Serial.print("Failed to find our service UUID: ");
-      Serial.println(serviceUUID.toString().c_str());
-      pClient->disconnect();
-      return false;
+/** Notification / Indication receiving handler callback */
+void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify){
+    std::string str = (isNotify == true) ? "Notification" : "Indication";
+    str += " from ";
+    /** NimBLEAddress and NimBLEUUID have std::string operators */
+    str += std::string(pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress());
+    str += ": Service = " + std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
+    str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
+    str += ", Value = " + std::string((char*)pData, length);
+    Serial.println(str.c_str());
+}
+
+/** Callback to process the results of the last scan or restart it */
+void scanEndedCB(NimBLEScanResults results){
+    Serial.println("Scan Ended");
+}
+
+
+/** Create a single global instance of the callback class to be used by all clients */
+static ClientCallbacks clientCB;
+
+
+/** Handles the provisioning of clients and connects / interfaces with the server */
+bool connectToClient() {
+    NimBLEClient* pClient = nullptr;
+
+    /** Check if we have a client we should reuse first **/
+    if(NimBLEDevice::getClientListSize() != 0) {
+        /** Special case when we already know this device, we send false as the
+         *  second argument in connect() to prevent refreshing the service database.
+         *  This saves considerable time and power.
+         */
+        pClient = NimBLEDevice::getClientByPeerAddress(advDevice->getAddress());
+        if(pClient){
+            if(!pClient->connect(advDevice, false)) {
+                Serial.println("Reconnect failed");
+                return false;
+            }
+            Serial.println("Reconnected client");
+        }
+        /** We don't already have a client that knows this device,
+         *  we will check for a client that is disconnected that we can use.
+         */
+        else {
+            pClient = NimBLEDevice::getDisconnectedClient();
+        }
     }
-    Serial.println(" - Found our service");
+
+    /** No client to reuse? Create a new one. */
+    if(!pClient) {
+        if(NimBLEDevice::getClientListSize() >= NIMBLE_MAX_CONNECTIONS) {
+            Serial.println("Max clients reached - no more connections available");
+            return false;
+        }
+
+        pClient = NimBLEDevice::createClient();
+
+        Serial.println("New client created");
+
+        pClient->setClientCallbacks(&clientCB, false);
+        /** Set initial connection parameters: These settings are 15ms interval, 0 latency, 120ms timout.
+         *  These settings are safe for 3 clients to connect reliably, can go faster if you have less
+         *  connections. Timeout should be a multiple of the interval, minimum is 100ms.
+         *  Min interval: 12 * 1.25ms = 15, Max interval: 12 * 1.25ms = 15, 0 latency, 51 * 10ms = 510ms timeout
+         */
+        pClient->setConnectionParams(12,12,0,51);
+        /** Set how long we are willing to wait for the connection to complete (seconds), default is 30. */
+        pClient->setConnectTimeout(5);
 
 
-    // Obtain a reference to the characteristic in the service of the remote BLE server.
-    pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
-    if (pRemoteCharacteristic == nullptr) {
-      Serial.print("Failed to find our characteristic UUID: ");
-      Serial.println(charUUID.toString().c_str());
-      pClient->disconnect();
-      return false;
+        if (!pClient->connect(advDevice)) {
+            /** Created a client but failed to connect, don't need to keep it as it has no data */
+            NimBLEDevice::deleteClient(pClient);
+            Serial.println("Failed to connect, deleted client");
+            return false;
+        }
     }
-    Serial.println(" - Found our characteristic");
 
-    // Read the value of the characteristic.
-    if(pRemoteCharacteristic->canRead()) {
-      std::string value = pRemoteCharacteristic->readValue();
-      Serial.print("The characteristic value was: ");
-      Serial.println(value.c_str());
+    if(!pClient->isConnected()) {
+        if (!pClient->connect(advDevice)) {
+            Serial.println("Failed to connect");
+            return false;
+        }
     }
 
-    if(pRemoteCharacteristic->canNotify())
-      pRemoteCharacteristic->registerForNotify(notifyCallback);
+    Serial.print("Connected to: ");
+    Serial.println(pClient->getPeerAddress().toString().c_str());
+    Serial.print("RSSI: ");
+    Serial.println(pClient->getRssi());
 
-    connected = true;
+    /** Now we can read/write/subscribe the charateristics of the services we are interested in */
+    NimBLERemoteService* pSvc = nullptr;
+    NimBLERemoteCharacteristic* pChr = nullptr;
+    NimBLERemoteDescriptor* pDsc = nullptr;
+
+    pSvc = pClient->getService(serviceUUID);
+    if(pSvc) {     /** make sure it's not null */
+        pChr = pSvc->getCharacteristic(charUUID);
+
+        if(pChr) {     /** make sure it's not null */
+            if(pChr->canRead()) {
+                Serial.print(pChr->getUUID().toString().c_str());
+                Serial.print(" Value: ");
+                Serial.println(pChr->readValue().c_str());
+            }
+
+            if(pChr->canWrite()) {
+                if(pChr->writeValue("2=255\n")) {
+                    Serial.print("Wrote new value to: ");
+                    Serial.println(pChr->getUUID().toString().c_str());
+                }
+                else {
+                    /** Disconnect if write failed */
+                    pClient->disconnect();
+                    return false;
+                }
+
+                if(pChr->canRead()) {
+                    Serial.print("The value of: ");
+                    Serial.print(pChr->getUUID().toString().c_str());
+                    Serial.print(" is now: ");
+                    Serial.println(pChr->readValue().c_str());
+                }
+            }
+
+            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
+             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
+             *  Unsubscribe parameter defaults are: response=false.
+             */
+            if(pChr->canNotify()) {
+                //if(!pChr->registerForNotify(notifyCB)) {
+                if(!pChr->subscribe(true, notifyCB)) {
+                    /** Disconnect if subscribe failed */
+                    pClient->disconnect();
+                    return false;
+                }
+            }
+            else if(pChr->canIndicate()) {
+                /** Send false as first argument to subscribe to indications instead of notifications */
+                //if(!pChr->registerForNotify(notifyCB, false)) {
+                if(!pChr->subscribe(false, notifyCB)) {
+                    /** Disconnect if subscribe failed */
+                    pClient->disconnect();
+                    return false;
+                }
+            }
+        }
+
+    } else {
+        Serial.println("Service not found.");
+    }
+
+    pSvc = pClient->getService(batService);
+    if(pSvc) {     /** make sure it's not null */
+        pChr = pSvc->getCharacteristic(batChar);
+
+        if(pChr) {     /** make sure it's not null */
+            if(pChr->canRead()) {
+                Serial.print(pChr->getUUID().toString().c_str());
+                Serial.print(" Value: ");
+                Serial.println(pChr->readValue().c_str());
+            }
+
+            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
+             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
+             *  Unsubscribe parameter defaults are: response=false.
+             */
+            if(pChr->canNotify()) {
+                //if(!pChr->registerForNotify(notifyCB)) {
+                Serial.println("Subscribing to battery updates");
+                if(!pChr->subscribe(true, notifyCB)) {
+                    /** Disconnect if subscribe failed */
+                    pClient->disconnect();
+                    return false;
+                }
+            }
+        }
+
+    } else {
+        Serial.println("battery service not found.");
+    }
+
+    Serial.println("Done with this device!");
     return true;
 }
-/**
- * Scan for BLE servers and find the first one that advertises the service we are looking for.
- */
-class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
- /**
-   * Called for each advertising BLE server.
-   */
-  void onResult(BLEAdvertisedDevice advertisedDevice) {
-    //Serial.print("BLE Advertised Device found: ");
-    //Serial.println(advertisedDevice.toString().c_str());
 
-    // We have found a device, let us now see if it contains the service we are looking for.
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
+void setup (){
+    Serial.begin(115200);
+    Serial.println("Starting NimBLE Client");
+    /** Initialize NimBLE, no device name spcified as we are not advertising */
+    NimBLEDevice::init("");
 
-      BLEDevice::getScan()->stop();
-      myDevice = new BLEAdvertisedDevice(advertisedDevice);
-      doConnect = true;
-      doScan = true;
+    /** Set the IO capabilities of the device, each option will trigger a different pairing method.
+     *  BLE_HS_IO_KEYBOARD_ONLY    - Passkey pairing
+     *  BLE_HS_IO_DISPLAY_YESNO   - Numeric comparison pairing
+     *  BLE_HS_IO_NO_INPUT_OUTPUT - DEFAULT setting - just works pairing
+     */
+    //NimBLEDevice::setSecurityIOCap(BLE_HS_IO_KEYBOARD_ONLY); // use passkey
+    //NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_YESNO); //use numeric comparison
 
-    } // Found our server
-  } // onResult
-}; // MyAdvertisedDeviceCallbacks
+    /** 2 different ways to set security - both calls achieve the same result.
+     *  no bonding, no man in the middle protection, secure connections.
+     *
+     *  These are the default values, only shown here for demonstration.
+     */
+    //NimBLEDevice::setSecurityAuth(false, false, true);
+    NimBLEDevice::setSecurityAuth(/*BLE_SM_PAIR_AUTHREQ_BOND | BLE_SM_PAIR_AUTHREQ_MITM |*/ BLE_SM_PAIR_AUTHREQ_SC);
+
+    /** Optional: set the transmit power, default is 3db */
+#ifdef ESP_PLATFORM
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9); /** +9db */
+#else
+    NimBLEDevice::setPower(9); /** +9db */
+#endif
+
+    /** Optional: set any devices you don't want to get advertisments from */
+    // NimBLEDevice::addIgnored(NimBLEAddress ("aa:bb:cc:dd:ee:ff"));
+
+    /** create new scan */
+    NimBLEScan* pScan = NimBLEDevice::getScan();
+
+    /** create a callback that gets called when advertisers are found */
+    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
+
+    /** Set scan interval (how often) and window (how long) in milliseconds */
+    pScan->setInterval(45);
+    pScan->setWindow(15);
+
+    /** Active scan will gather scan response data from advertisers
+     *  but will use more energy from both devices
+     */
+    //pScan->setActiveScan(true);
+    /** Start scanning for advertisers for the scan time specified (in seconds) 0 = forever
+     *  Optional callback for when scanning stops.
+     */
+    pScan->start(scanTime, scanEndedCB);
+}
 
 
-void setup() {
-
-  tft.init();
-
-  tft.fillScreen(TFT_BLACK);
-  tft.setCursor(0, 0, 4);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.println("BLE Example");
-
-
-  Serial.begin(115200);
-  Serial.println("Starting Arduino BLE Client application...");
-  BLEDevice::init("");
-
-  // Retrieve a Scanner and set the callback we want to use to be informed when we
-  // have detected a new device.  Specify that we want active scanning and start the
-  // scan to run for 5 seconds.
-  BLEScan* pBLEScan = BLEDevice::getScan();
-  pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
-  pBLEScan->setInterval(1349);
-  pBLEScan->setWindow(449);
-  pBLEScan->setActiveScan(true);
-  pBLEScan->start(5, false);
-} // End of setup.
-
-
-// This is the Arduino main loop function.
-void loop() {
-
-  // If the flag "doConnect" is true then we have scanned for and found the desired
-  // BLE Server with which we wish to connect.  Now we connect to it.  Once we are
-  // connected we set the connected flag to be true.
-  if (doConnect == true) {
-    if (connectToServer()) {
-      Serial.println("We are now connected to the BLE Server.");
-    } else {
-      Serial.println("We have failed to connect to the server; there is nothin more we will do.");
+void loop (){
+    /** Loop here until we find a device we want to connect to */
+    while(!doConnect){
+        delay(1);
     }
+
     doConnect = false;
-  }
 
-  // If we are connected to a peer BLE Server, update the characteristic each time we are reached
-  // with the current time since boot.
-  if (connected) {
-    static int v = 0;
-    v = 255-v;
-    String newValue = String("2=") + v + "\n";
-    Serial.println("Sending data");
+    /** Found a device we want to connect to, do it now */
+    if(connectToClient()) {
+        Serial.println("Success! we should now be getting notifications, scanning for more!");
+    } else {
+        Serial.println("Failed to connect, starting scan");
+    }
 
-    // Set the characteristic's value to be the array of bytes that is actually a string.
-    pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
-  }else if(doScan){
-    BLEDevice::getScan()->start(0);  // this is just example to start scan after disconnect, most likely there is better way to do it in arduino
-  }
-
-  delay(1000); // Delay a second between loops.
-} // End of loop
+    NimBLEDevice::getScan()->start(scanTime,scanEndedCB);
+}
