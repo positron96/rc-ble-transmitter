@@ -6,13 +6,11 @@ TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
 #include <NimBLEDevice.h>
 
 
-// The remote service we wish to connect to.
-static NimBLEUUID serviceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-// The characteristic of the remote service we are interested in.
-static NimBLEUUID  charUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID uartServiceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID  uartCharTxUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
 
-static NimBLEUUID batService("180F");
-static NimBLEUUID batChar("2A19");
+static NimBLEUUID batServiceUUID("180F");
+static NimBLEUUID batCharLevelUUID("2A19");
 
 
 void scanEndedCB(NimBLEScanResults results);
@@ -20,7 +18,7 @@ void scanEndedCB(NimBLEScanResults results);
 static NimBLEAdvertisedDevice* advDevice;
 
 static bool doConnect = false;
-static uint32_t scanTime = 0; /** 0 = scan forever */
+constexpr uint32_t scanTime = 0; /** 0 = scan forever */
 
 
 /**  None of these are required as they will be handled by the library with defaults. **
@@ -94,7 +92,7 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         Serial.print("Advertised Device found: ");
         Serial.println(advertisedDevice->toString().c_str());
-        if(advertisedDevice->isAdvertisingService(serviceUUID))  {
+        if(advertisedDevice->isAdvertisingService(uartServiceUUID))  {
             Serial.println("Found Our Service");
             /** stop scan before connecting */
             NimBLEDevice::getScan()->stop();
@@ -202,9 +200,9 @@ bool connectToClient() {
     NimBLERemoteCharacteristic* pChr = nullptr;
     NimBLERemoteDescriptor* pDsc = nullptr;
 
-    pSvc = pClient->getService(serviceUUID);
+    pSvc = pClient->getService(uartServiceUUID);
     if(pSvc) {     /** make sure it's not null */
-        pChr = pSvc->getCharacteristic(charUUID);
+        pChr = pSvc->getCharacteristic(uartCharTxUUID);
 
         if(pChr) {     /** make sure it's not null */
             if(pChr->canRead()) {
@@ -259,9 +257,9 @@ bool connectToClient() {
         Serial.println("Service not found.");
     }
 
-    pSvc = pClient->getService(batService);
+    pSvc = pClient->getService(batServiceUUID);
     if(pSvc) {     /** make sure it's not null */
-        pChr = pSvc->getCharacteristic(batChar);
+        pChr = pSvc->getCharacteristic(batCharLevelUUID);
 
         if(pChr) {     /** make sure it's not null */
             if(pChr->canRead()) {
