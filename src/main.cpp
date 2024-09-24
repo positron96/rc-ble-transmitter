@@ -1,10 +1,10 @@
+#include <type_traits>
 #include <Arduino.h>
 
 #include <TFT_eSPI.h>       // Hardware-specific library
 TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
 
 #include <NimBLEDevice.h>
-
 
 static NimBLEUUID uartServiceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 static NimBLEUUID uartCharTxUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -281,10 +281,11 @@ bool connectToClient() {
     return true;
 }
 
-void setup (){
+void setup () {
     Serial.begin(115200);
     Serial.println("Starting NimBLE Client");
 
+    analogReadResolution(10);
 
     tft.init();
 
@@ -343,6 +344,59 @@ void setup (){
 }
 
 
+constexpr int PIN_X = 2;
+constexpr int PIN_Y = 15;
+constexpr int PIN_C = 17;
+
+
+/** Rounded division. */
+template<typename T, typename U, std::enable_if_t<std::is_unsigned_v<U> >* =nullptr >
+T rdiv(const T x, const U y) {
+    T quot = x / y;
+    T rem = x % y;
+    U ty = y-1;
+    if (x >= 0) {
+        return quot + (rem > (ty/2));
+    } else {
+        return quot - (rem < (-ty/2));
+    }
+}
+
+int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_t deadzone = 0) {
+    //constexpr uint8_t center = 512;
+    constexpr uint16_t in_range = 512;
+    const uint16_t out_range = in_range - deadzone;
+    int16_t ret = v - center;
+    if(deadzone != 0) {
+        uint16_t mag = abs(ret);
+        if(mag < deadzone) return 0;
+        else return (ret>0?1:-1) * rdiv((mag-deadzone)*in_range, out_range);
+    } else {
+        return ret;
+    }
+}
+
+void tick() {
+    int x = analogRead(PIN_X), t=x;
+    int y = analogRead(PIN_Y);
+    bool down = digitalRead(PIN_C);
+    x = to_centered(x, 465, 10);
+    y = to_centered(y, 445, 10);
+
+
+    tft.fillRect(0, 20, tft.width(), 16, TFT_BLACK);
+    tft.setTextColor(TFT_CYAN);
+    tft.drawString(String("")+t+"/"+x, 1, 20);
+
+    constexpr int CX = 65, CY=100, R=50;
+
+    tft.fillCircle(CX, CY, R, TFT_GREEN);
+
+
+    tft.drawLine(CX, CY, CX+x*R/512, CY+y*R/512, down ? TFT_ORANGE : TFT_BLUE);
+}
+
+
 void loop () {
 
     if(doConnect) {
@@ -366,8 +420,11 @@ void loop () {
             txChar->writeValue(v ? "2=255\n": "2=0\n");
             v = !v;
         }
+
     }
 
-    delay(1000);
+    tick();
+
+    delay(50);
 
 }
