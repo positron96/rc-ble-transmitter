@@ -128,15 +128,18 @@ void onRxNotification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t
     Serial.println(str.c_str());
 }
 
+void updateBatteryValue(uint8_t val) {
+    Serial.printf("Battery: %d\n", val);
+    String ss = String("Bat:")+val+"  ";
+    tft.drawString(ss, 1, tft.getViewportHeight() - tft.fontHeight());
+}
+
 void onBatteryNotification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t len, bool isNotify){
     if(len<1) {
         Serial.println("Bad battery value");
         return;
     }
-
-    Serial.printf("Battery notification (%s): %d\n",
-        pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress().toString().c_str(),
-        pData[0]);
+    updateBatteryValue(pData[0]);
 }
 
 /** Callback to process the results of the last scan or restart it */
@@ -259,7 +262,7 @@ bool connectToClient() {
 
         if(pChr) {
             if(pChr->canRead()) {
-                Serial.printf("Battery value: %d\n", pChr->readValue().data()[0]);
+                updateBatteryValue(pChr->readValue().data()[0]);
             }
 
             if(pChr->canNotify()) {
@@ -281,7 +284,16 @@ bool connectToClient() {
 void setup (){
     Serial.begin(115200);
     Serial.println("Starting NimBLE Client");
-    /** Initialize NimBLE, no device name spcified as we are not advertising */
+
+
+    tft.init();
+
+    tft.fillScreen(TFT_BLACK);
+    tft.setFreeFont(&FreeMono9pt7b);
+    tft.setCursor(0, 0, 4);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.println("BLE");
+
     NimBLEDevice::init("");
 
     /** Set the IO capabilities of the device, each option will trigger a different pairing method.
