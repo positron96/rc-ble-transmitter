@@ -7,7 +7,8 @@ TFT_eSPI tft = TFT_eSPI();  // Invoke custom library
 
 
 static NimBLEUUID uartServiceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-static NimBLEUUID  uartCharTxUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID uartCharTxUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+static NimBLEUUID uartCharRxUUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
 
 static NimBLEUUID batServiceUUID("180F");
 static NimBLEUUID batCharLevelUUID("2A19");
@@ -19,6 +20,8 @@ static NimBLEAdvertisedDevice* advDevice;
 
 static bool doConnect = false;
 constexpr uint32_t scanTime = 0; /** 0 = scan forever */
+
+NimBLERemoteCharacteristic* txChar = nullptr;
 
 
 /**  None of these are required as they will be handled by the library with defaults. **
@@ -38,6 +41,7 @@ class ClientCallbacks : public NimBLEClientCallbacks {
     void onDisconnect(NimBLEClient* pClient) {
         Serial.print(pClient->getPeerAddress().toString().c_str());
         Serial.println(" Disconnected - Starting scan");
+        txChar = nullptr;
         NimBLEDevice::getScan()->start(scanTime, scanEndedCB);
     };
 
@@ -89,15 +93,18 @@ class ClientCallbacks : public NimBLEClientCallbacks {
 /** Define a class to handle the callbacks when advertisments are received */
 class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-        Serial.print("Advertised Device found: ");
-        Serial.println(advertisedDevice->toString().c_str());
-        if(advertisedDevice->isAdvertisingService(uartServiceUUID))  {
+    void onResult(NimBLEAdvertisedDevice* dev) {
+        Serial.printf("Advertised Device found: '%s'(%s) %d services\n",
+            dev->getName().c_str(),
+            dev->getAddress().toString().c_str(),
+            dev->getServiceUUIDCount());
+
+        if(dev->isAdvertisingService(uartServiceUUID))  {
             Serial.println("Found Our Service");
             /** stop scan before connecting */
             NimBLEDevice::getScan()->stop();
             /** Save the device reference in a global for the client to use*/
-            advDevice = advertisedDevice;
+            advDevice = dev;
             /** Ready to connect now */
             doConnect = true;
         }
@@ -106,7 +113,7 @@ class AdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 
 
 /** Notification / Indication receiving handler callback */
-void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify){
+void onRxNotification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify){
     std::string str = (isNotify == true) ? "Notification" : "Indication";
     str += " from ";
     /** NimBLEAddress and NimBLEUUID have std::string operators */
@@ -115,6 +122,17 @@ void notifyCB(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData,
     str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
     str += ", Value = " + std::string((char*)pData, length);
     Serial.println(str.c_str());
+}
+
+void onBatteryNotification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t len, bool isNotify){
+    if(len<1) {
+        Serial.println("Bad battery value");
+        return;
+    }
+
+    Serial.printf("Battery notification (%s): %d\n",
+        pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress().toString().c_str(),
+        pData[0]);
 }
 
 /** Callback to process the results of the last scan or restart it */
@@ -197,55 +215,34 @@ bool connectToClient() {
 
     /** Now we can read/write/subscribe the charateristics of the services we are interested in */
     NimBLERemoteService* pSvc = nullptr;
-    NimBLERemoteCharacteristic* pChr = nullptr;
-    NimBLERemoteDescriptor* pDsc = nullptr;
+    //NimBLERemoteDescriptor* pDsc = nullptr;
 
     pSvc = pClient->getService(uartServiceUUID);
-    if(pSvc) {     /** make sure it's not null */
-        pChr = pSvc->getCharacteristic(uartCharTxUUID);
-
-        if(pChr) {     /** make sure it's not null */
-            if(pChr->canRead()) {
-                Serial.print(pChr->getUUID().toString().c_str());
-                Serial.print(" Value: ");
-                Serial.println(pChr->readValue().c_str());
-            }
-
-            if(pChr->canWrite()) {
-                if(pChr->writeValue("2=255\n")) {
+    if(pSvc) {
+        txChar = pSvc->getCharacteristic(uartCharTxUUID);
+        if(txChar) {
+            if(txChar->canWrite()) {
+                if(txChar->writeValue("2=255\n")) {
                     Serial.print("Wrote new value to: ");
-                    Serial.println(pChr->getUUID().toString().c_str());
-                }
-                else {
+                    Serial.println(txChar->getUUID().toString().c_str());
+                } else {
                     /** Disconnect if write failed */
                     pClient->disconnect();
                     return false;
                 }
-
-                if(pChr->canRead()) {
-                    Serial.print("The value of: ");
-                    Serial.print(pChr->getUUID().toString().c_str());
-                    Serial.print(" is now: ");
-                    Serial.println(pChr->readValue().c_str());
-                }
             }
+        }
 
-            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
-             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
-             *  Unsubscribe parameter defaults are: response=false.
-             */
-            if(pChr->canNotify()) {
-                //if(!pChr->registerForNotify(notifyCB)) {
-                if(!pChr->subscribe(true, notifyCB)) {
-                    /** Disconnect if subscribe failed */
+        NimBLERemoteCharacteristic *rxChar = pSvc->getCharacteristic(uartCharRxUUID);
+        if(rxChar) {
+            if(rxChar->canNotify()) {
+                if(!rxChar->subscribe(true, onRxNotification)) {
                     pClient->disconnect();
                     return false;
                 }
-            }
-            else if(pChr->canIndicate()) {
+            } else if(rxChar->canIndicate()) {
                 /** Send false as first argument to subscribe to indications instead of notifications */
-                //if(!pChr->registerForNotify(notifyCB, false)) {
-                if(!pChr->subscribe(false, notifyCB)) {
+                if(!rxChar->subscribe(false, onRxNotification)) {
                     /** Disconnect if subscribe failed */
                     pClient->disconnect();
                     return false;
@@ -258,26 +255,17 @@ bool connectToClient() {
     }
 
     pSvc = pClient->getService(batServiceUUID);
-    if(pSvc) {     /** make sure it's not null */
-        pChr = pSvc->getCharacteristic(batCharLevelUUID);
+    if(pSvc) {
+        NimBLERemoteCharacteristic* pChr = pSvc->getCharacteristic(batCharLevelUUID);
 
-        if(pChr) {     /** make sure it's not null */
+        if(pChr) {
             if(pChr->canRead()) {
-                Serial.print(pChr->getUUID().toString().c_str());
-                Serial.print(" Value: ");
-                Serial.println(pChr->readValue().c_str());
+                Serial.printf("Battery value: %d\n", pChr->readValue().data()[0]);
             }
 
-            /** registerForNotify() has been deprecated and replaced with subscribe() / unsubscribe().
-             *  Subscribe parameter defaults are: notifications=true, notifyCallback=nullptr, response=false.
-             *  Unsubscribe parameter defaults are: response=false.
-             */
             if(pChr->canNotify()) {
-                //if(!pChr->registerForNotify(notifyCB)) {
-                Serial.println("Subscribing to battery updates");
-                if(!pChr->subscribe(true, notifyCB)) {
-                    /** Disconnect if subscribe failed */
-                    pClient->disconnect();
+                if(!pChr->subscribe(true, onBatteryNotification)) {
+                    Serial.println("Subscribing to battery updates failed!");
                     return false;
                 }
             }
@@ -336,7 +324,7 @@ void setup (){
     /** Active scan will gather scan response data from advertisers
      *  but will use more energy from both devices
      */
-    //pScan->setActiveScan(true);
+    pScan->setActiveScan(true);
     /** Start scanning for advertisers for the scan time specified (in seconds) 0 = forever
      *  Optional callback for when scanning stops.
      */
@@ -344,20 +332,31 @@ void setup (){
 }
 
 
-void loop (){
-    /** Loop here until we find a device we want to connect to */
-    while(!doConnect){
-        delay(1);
+void loop () {
+
+    if(doConnect) {
+        doConnect = false;
+        if(!connectToClient() ) {
+            Serial.println("Failed to connect, starting scan");
+            NimBLEDevice::getScan()->start(scanTime,scanEndedCB);
+        }
     }
 
-    doConnect = false;
+    // for(const auto &dev: *NimBLEDevice::getClientList()) {
+    //     if(!dev->isConnected()) continue;
+    //     Serial.printf("conn strength %d\n", dev->getRssi());
+    // }
 
-    /** Found a device we want to connect to, do it now */
-    if(connectToClient()) {
-        Serial.println("Success! we should now be getting notifications, scanning for more!");
-    } else {
-        Serial.println("Failed to connect, starting scan");
+    static size_t last_t = 0;
+    static bool v = false;
+    if(millis() - last_t > 1000) {
+        last_t = millis();
+        if(txChar != nullptr) {
+            txChar->writeValue(v ? "2=255\n": "2=0\n");
+            v = !v;
+        }
     }
 
-    NimBLEDevice::getScan()->start(scanTime,scanEndedCB);
+    delay(1000);
+
 }
