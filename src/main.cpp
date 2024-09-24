@@ -50,13 +50,17 @@ class ClientCallbacks : public NimBLEClientCallbacks {
      *  the currently used parameters. Default will return true.
      */
     bool onConnParamsUpdateRequest(NimBLEClient* pClient, const ble_gap_upd_params* params) {
-        if(params->itvl_min < 24) { /** 1.25ms units */
+        // Serial.printf("conn update: conn:%d-%d, lat:%d; sup:%d\n",
+        //     params->itvl_min, params->itvl_max,
+        //     params->latency,
+        //     params->supervision_timeout);
+        if(params->itvl_min < BLE_GAP_CONN_ITVL_MS(10)) { /** 1.25ms units */
             return false;
-        } else if(params->itvl_max > 40) { /** 1.25ms units */
+        } else if(params->itvl_max > BLE_GAP_CONN_ITVL_MS(100)) { /** 1.25ms units */
             return false;
-        } else if(params->latency > 2) { /** Number of intervals allowed to skip */
+        } else if(params->latency > 5) { /** Number of intervals allowed to skip */
             return false;
-        } else if(params->supervision_timeout > 100) { /** 10ms units */
+        } else if(params->supervision_timeout > BLE_GAP_SUPERVISION_TIMEOUT_MS(15000)) { /** 10ms units */
             return false;
         }
 
@@ -213,23 +217,18 @@ bool connectToClient() {
     Serial.print("RSSI: ");
     Serial.println(pClient->getRssi());
 
-    /** Now we can read/write/subscribe the charateristics of the services we are interested in */
     NimBLERemoteService* pSvc = nullptr;
-    //NimBLERemoteDescriptor* pDsc = nullptr;
 
     pSvc = pClient->getService(uartServiceUUID);
     if(pSvc) {
         txChar = pSvc->getCharacteristic(uartCharTxUUID);
         if(txChar) {
-            if(txChar->canWrite()) {
-                if(txChar->writeValue("2=255\n")) {
-                    Serial.print("Wrote new value to: ");
-                    Serial.println(txChar->getUUID().toString().c_str());
-                } else {
-                    /** Disconnect if write failed */
-                    pClient->disconnect();
-                    return false;
-                }
+            if(!txChar->canWrite()) {
+                Serial.print("TX char is not writeable! ");
+                txChar = nullptr;
+                Serial.println(txChar->getUUID().toString().c_str());
+                pClient->disconnect();
+                return false;
             }
         }
 
@@ -275,7 +274,7 @@ bool connectToClient() {
         Serial.println("battery service not found.");
     }
 
-    Serial.println("Done with this device!");
+    Serial.println("Device set up");
     return true;
 }
 
@@ -338,7 +337,7 @@ void loop () {
         doConnect = false;
         if(!connectToClient() ) {
             Serial.println("Failed to connect, starting scan");
-            NimBLEDevice::getScan()->start(scanTime,scanEndedCB);
+            NimBLEDevice::getScan()->start(scanTime, scanEndedCB);
         }
     }
 
