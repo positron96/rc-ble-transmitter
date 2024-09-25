@@ -1,0 +1,14 @@
+# A firmware for BLE-based RC transmitter
+
+Intended for 1/87 vehicles and other small vehicles,
+ to be used with link:https://github.com/positron96/rc-ble[BLE-based RC receiver].
+
+Based on ESP32, Arduino framework and PlatformIO build system.
+
+Hardware used:
+
+* Lilygo T-Display (a ESP32 and a TFT display)
+* something to navigate the UI
+* 2 axis joystick (steering+throttle)
+* toggle switches for light control.
+
