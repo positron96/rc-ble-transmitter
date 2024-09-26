@@ -23,9 +23,6 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
 
 void on_battery_updated(uint8_t val) {
     remote_batt_value = val;
-    //Serial.printf("Battery: %d\n", val);
-    String ss = String("Bat:")+val+"  ";
-    tft.drawString(ss, 1, tft.getViewportHeight() - tft.fontHeight());
 }
 
 void on_dev_disconnected(NimBLEClient *dev) {
@@ -39,15 +36,16 @@ void setup () {
     Serial.println("Starting NimBLE Client");
 
     analogReadResolution(10);
-    pinMode(LEFT_BUTTON, INPUT);
-    pinMode(RIGHT_BUTTON, INPUT);
+    pinMode(LEFT_BUTTON, INPUT_PULLUP);
+    pinMode(RIGHT_BUTTON, INPUT_PULLUP);
 
     tft.init();
 
     tft.fillScreen(TFT_BLACK);
-    tft.setFreeFont(&FreeMono9pt7b);
-    tft.setCursor(0, 0, 4);
+
+    tft.setFreeFont(&FreeSans9pt7b);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.println();
     tft.println("BLE");
 
     ble::init();
@@ -58,8 +56,8 @@ void setup () {
 }
 
 
-constexpr int PIN_X = 2;
-constexpr int PIN_Y = 15;
+constexpr int PIN_X = 15;
+constexpr int PIN_Y = 2;
 constexpr int PIN_C = 17;
 
 
@@ -91,32 +89,37 @@ int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_
 }
 
 void tick() {
-    int x = analogRead(PIN_X), t=x;
+    int x = analogRead(PIN_X);
     int y = analogRead(PIN_Y);
     bool down = digitalRead(PIN_C);
-    x = to_centered(x, 465, 10);
+    x = -to_centered(x, 465, 10);
     y = to_centered(y, 445, 10);
 
-    static int last_x, last_y;
-    if(x != last_x || y!=last_y) {
+    static int last_x=-1000, last_y=0;
+    if(x!=last_x || y!=last_y) {
         tft.fillRect(0, 20, tft.width(), 16, TFT_BLACK);
-        tft.setTextColor(TFT_CYAN);
-        tft.drawString(String("")+t+"/"+x, 1, 20);
 
-        constexpr int CX = 65, CY=100, R=50;
+        constexpr int CX = 65, CY=120, R=50;
 
-        tft.fillCircle(CX, CY, R, TFT_GREEN);
+        tft.fillCircle(CX, CY, R, TFT_DARKGREEN);
+        tft.drawString(String("")+x+"/"+y, CX-25, CY-5);
         tft.drawLine(CX, CY, CX+x*R/512, CY+y*R/512, down ? TFT_ORANGE : TFT_BLUE);
-    }
 
-    String s = String("0="); s+=x*128/512; s+="\n";
-    ble::send(s.c_str());
-    s = String("1="); s+= y*128/512; s+="\n";
-    ble::send(s.c_str());
+        String s = String("1="); s+=128 + x*128/512; s+="\n";
+        ble::send(s.c_str());
+        s = String("0="); s+= 128 + y*128/512; s+="\n";
+        ble::send(s.c_str());
+    }
+    last_x = x;
+    last_y = y;
 }
 
 void draw_batteries() {
-
+    constexpr int ADC2 = 564, V2 = 4200,
+        ADC1 = 428, V1 = 3200;
+    int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
+    String ss = String("R:")+remote_batt_value+"  I:"+(int_batt/1000.0f)+" ";
+    tft.drawString(ss, 1, tft.getViewportHeight() - tft.fontHeight());
 }
 
 void loop () {
@@ -130,17 +133,19 @@ void loop () {
     static bool v = false;
     if(millis() - last_t > 1000) {
         last_t = millis();
-        if(ble::is_connected()) {
-            ble::send(v ? "2=255\n": "2=0\n");
-            v = !v;
-        }
+        // if(ble::is_connected()) {
+        //     ble::send(v ? "2=255\n": "2=0\n");
+        //     v = !v;
+        // }
 
-        Serial.printf("int bat: %d\n", analogRead(VBAT));
+        draw_batteries();
+
     }
 
     static etl::debounce<1, 20> bt_connect;
-    static etl::debounce<1> bt_disconenct;
+    static etl::debounce<1, 20> bt_func;
 
+    // tft.fillRect(tft.width()-10, 0, 10, 10, rd?TFT_GREEN:TFT_RED);
     if(bt_connect.add(digitalRead(LEFT_BUTTON) == LOW)) {
         if(bt_connect.is_set() && found_devs.size()>0) {
             ble::connect(found_devs[0]);
@@ -150,6 +155,13 @@ void loop () {
 
     if(bt_connect.has_changed() && bt_connect.is_held() && ble::is_connected()) {
         ble::disconnect();
+    }
+
+    if(bt_func.add(digitalRead(RIGHT_BUTTON) == LOW)) {
+        if(bt_func.is_set() && ble::is_connected()) {
+            ble::send(v?"2=255\n" : "2=0\n");
+            v = !v;
+        }
     }
 
     if(ble::is_connected()) {

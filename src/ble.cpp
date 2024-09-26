@@ -107,10 +107,10 @@ namespace ble {
 
         void onResult(NimBLEAdvertisedDevice* dev) {
 
-            Serial.printf("Advertised Device found: '%s'(%s) %d services\n",
-                dev->getName().c_str(),
-                dev->getAddress().toString().c_str(),
-                dev->getServiceUUIDCount());
+            // Serial.printf("Advertised Device found: '%s'(%s) %d services\n",
+            //     dev->getName().c_str(),
+            //     dev->getAddress().toString().c_str(),
+            //     dev->getServiceUUIDCount());
 
             if(dev->getName().length()>0
                 && dev->isAdvertisingService(uartServiceUUID)
@@ -337,7 +337,7 @@ namespace ble {
     }
 
     bool send(const char* msg) {
-        if(txChar != nullptr) return false;
+        if(txChar == nullptr) return false;
         txChar->writeValue(msg);
         return true;
     }
