@@ -115,11 +115,15 @@ void tick() {
 }
 
 void draw_batteries() {
-    constexpr int ADC2 = 564, V2 = 4200,
+    constexpr int ADC2 = 580, V2 = 4200,
         ADC1 = 428, V1 = 3200;
     int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
-    String ss = String("R:")+remote_batt_value+"  I:"+(int_batt/1000.0f)+" ";
-    tft.drawString(ss, 1, tft.getViewportHeight() - tft.fontHeight());
+    char msg[100]; size_t l=0;
+    if(ble::is_connected()) {
+        l = snprintf(msg, sizeof(msg), "R:%d  ", remote_batt_value);
+    }
+    snprintf(msg+l, sizeof(msg)-l, "I:%.2fV ", int_batt/1000.0f);
+    tft.drawString(msg, 1, tft.getViewportHeight() - tft.fontHeight());
 }
 
 void loop () {
