@@ -18,7 +18,7 @@ uint8_t remote_batt_value;
 
 void on_dev_found(NimBLEAdvertisedDevice *dev) {
     tft.printf("%s(%s)\n", dev->getName().c_str(), dev->getAddress().toString().c_str());
-    found_devs.push_back(dev);
+    if(found_devs.available()>0) found_devs.push_back(dev);
 }
 
 void on_battery_updated(uint8_t val) {
@@ -28,6 +28,8 @@ void on_battery_updated(uint8_t val) {
 void on_dev_disconnected(NimBLEClient *dev) {
     Serial.print(dev->getPeerAddress().toString().c_str());
     Serial.println(" Disconnected; starting scan");
+
+    found_devs.clear();
     ble::start_scan();
 }
 
@@ -153,7 +155,6 @@ void loop () {
     if(bt_connect.add(digitalRead(LEFT_BUTTON) == LOW)) {
         if(bt_connect.is_set() && found_devs.size()>0) {
             ble::connect(found_devs[0]);
-            found_devs.clear();
         }
     }
 

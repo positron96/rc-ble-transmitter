@@ -20,17 +20,17 @@ namespace ble {
     }
 
 
-    static NimBLEUUID uartServiceUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-    static NimBLEUUID uartCharTxUUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
-    static NimBLEUUID uartCharRxUUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
+    static NimBLEUUID uart_service_uuid("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+    static NimBLEUUID uart_char_tx_uuid("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+    static NimBLEUUID uart_char_rx_uuid("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
 
-    static NimBLEUUID batServiceUUID("180F");
-    static NimBLEUUID batCharLevelUUID("2A19");
+    static NimBLEUUID bat_service_uuid("180F");
+    static NimBLEUUID bat_char_level_uuid("2A19");
 
-    static NimBLERemoteCharacteristic* txChar = nullptr;
+    static NimBLERemoteCharacteristic* char_tx = nullptr;
     static NimBLEClient *client;
 
-    constexpr uint32_t scanTime = 10; /** 0 = scan forever */
+    constexpr uint32_t scan_duration = 0; /** 0 = scan forever */
 
     class ClientCallbacks : public NimBLEClientCallbacks {
         void onConnect(NimBLEClient* pClient) {
@@ -49,7 +49,7 @@ namespace ble {
             if(disconnected_cb) {
                 disconnected_cb(pClient);
             }
-            txChar = nullptr;
+            char_tx = nullptr;
             client = nullptr;
         };
 
@@ -113,7 +113,7 @@ namespace ble {
             //     dev->getServiceUUIDCount());
 
             if(dev->getName().length()>0
-                && dev->isAdvertisingService(uartServiceUUID)
+                && dev->isAdvertisingService(uart_service_uuid)
                 && dev_found_cb != nullptr
             ) {
                 dev_found_cb(dev);
@@ -146,32 +146,26 @@ namespace ble {
         Serial.println(str.c_str());
     }
 
-    void updateBatteryValue(uint8_t val) {
+    void update_battery_value(uint8_t val) {
         if(battery_cb) battery_cb(val);
     }
 
-    void onBatteryNotification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t len, bool isNotify){
+    void on_battery_notification(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t len, bool isNotify){
         if(len<1) {
             Serial.println("Bad battery value");
             return;
         }
-        updateBatteryValue(pData[0]);
+        update_battery_value(pData[0]);
     }
 
 
-    /** Handles the provisioning of clients and connects / interfaces with the server */
     bool connect(NimBLEAdvertisedDevice* advDevice) {
 
         stop_scan();
 
         NimBLEClient* pClient = nullptr;
 
-        /** Check if we have a client we should reuse first **/
         if(NimBLEDevice::getClientListSize() != 0) {
-            /** Special case when we already know this device, we send false as the
-             *  second argument in connect() to prevent refreshing the service database.
-             *  This saves considerable time and power.
-             */
             pClient = NimBLEDevice::getClientByPeerAddress(advDevice->getAddress());
             if(pClient){
                 if(!pClient->connect(advDevice, false)) {
@@ -179,11 +173,7 @@ namespace ble {
                     return false;
                 }
                 Serial.println("Reconnected client");
-            }
-            /** We don't already have a client that knows this device,
-             *  we will check for a client that is disconnected that we can use.
-             */
-            else {
+            } else {
                 pClient = NimBLEDevice::getDisconnectedClient();
             }
         }
@@ -196,16 +186,17 @@ namespace ble {
             }
 
             pClient = NimBLEDevice::createClient();
-
             Serial.println("New client created");
-
             pClient->setClientCallbacks(&client_cb, false);
             /** Set initial connection parameters: These settings are 15ms interval, 0 latency, 120ms timout.
              *  These settings are safe for 3 clients to connect reliably, can go faster if you have less
              *  connections. Timeout should be a multiple of the interval, minimum is 100ms.
-             *  Min interval: 12 * 1.25ms = 15, Max interval: 12 * 1.25ms = 15, 0 latency, 51 * 10ms = 510ms timeout
              */
-            pClient->setConnectionParams(12,12,0,51);
+            pClient->setConnectionParams(
+                BLE_GAP_CONN_ITVL_MS(15),
+                BLE_GAP_CONN_ITVL_MS(15),
+                0,
+                BLE_GAP_SUPERVISION_TIMEOUT_MS(510));
             /** Set how long we are willing to wait for the connection to complete (seconds), default is 30. */
             pClient->setConnectTimeout(5);
 
@@ -230,53 +221,51 @@ namespace ble {
         Serial.print("RSSI: ");
         Serial.println(pClient->getRssi());
 
-        NimBLERemoteService* pSvc = nullptr;
+        NimBLERemoteService* svc = nullptr;
 
-        pSvc = pClient->getService(uartServiceUUID);
-        if(pSvc) {
-            txChar = pSvc->getCharacteristic(uartCharTxUUID);
-            if(txChar) {
-                if(!txChar->canWrite()) {
+        svc = pClient->getService(uart_service_uuid);
+        if(svc) {
+            char_tx = svc->getCharacteristic(uart_char_tx_uuid);
+            if(char_tx) {
+                if(!char_tx->canWrite()) {
                     Serial.print("TX char is not writeable! ");
-                    Serial.println(txChar->getUUID().toString().c_str());
-                    txChar = nullptr;
+                    Serial.println(char_tx->getUUID().toString().c_str());
+                    char_tx = nullptr;
                     pClient->disconnect();
                     return false;
                 }
             }
 
-            NimBLERemoteCharacteristic *rxChar = pSvc->getCharacteristic(uartCharRxUUID);
-            if(rxChar) {
-                if(rxChar->canNotify()) {
-                    if(!rxChar->subscribe(true, on_rx)) {
+            NimBLERemoteCharacteristic *char_rx = svc->getCharacteristic(uart_char_rx_uuid);
+            if(char_rx) {
+                if(char_rx->canNotify()) {
+                    if(!char_rx->subscribe(true, on_rx)) {
                         pClient->disconnect();
                         return false;
                     }
-                } else if(rxChar->canIndicate()) {
-                    /** Send false as first argument to subscribe to indications instead of notifications */
-                    if(!rxChar->subscribe(false, on_rx)) {
-                        /** Disconnect if subscribe failed */
+                } else if(char_rx->canIndicate()) {
+                    if(!char_rx->subscribe(false, on_rx)) {
                         pClient->disconnect();
                         return false;
                     }
                 }
             }
-
         } else {
             Serial.println("Service not found.");
         }
 
-        pSvc = pClient->getService(batServiceUUID);
-        if(pSvc) {
-            NimBLERemoteCharacteristic* pChr = pSvc->getCharacteristic(batCharLevelUUID);
+        svc = pClient->getService(bat_service_uuid);
+        if(svc) {
+            NimBLERemoteCharacteristic* bat_char = svc->getCharacteristic(bat_char_level_uuid);
 
-            if(pChr) {
-                if(pChr->canRead()) {
-                    updateBatteryValue(pChr->readValue().data()[0]);
+            if(bat_char) {
+                if(bat_char->canRead()) {
+                    NimBLEAttValue val = bat_char->readValue();
+                    if(val.length()>0) update_battery_value(val.data()[0]);
                 }
 
-                if(pChr->canNotify()) {
-                    if(!pChr->subscribe(true, onBatteryNotification)) {
+                if(bat_char->canNotify()) {
+                    if(!bat_char->subscribe(true, on_battery_notification)) {
                         Serial.println("Subscribing to battery updates failed!");
                         return false;
                     }
@@ -317,11 +306,11 @@ namespace ble {
         NimBLEDevice::setPower(9); /** +9db */
 #endif
 
-        NimBLEScan* pScan = NimBLEDevice::getScan();
-        pScan->setAdvertisedDeviceCallbacks(&adv_cb);
-        pScan->setInterval(45);
-        pScan->setWindow(15);
-        pScan->setActiveScan(true);
+        NimBLEScan* scan = NimBLEDevice::getScan();
+        scan->setAdvertisedDeviceCallbacks(&adv_cb);
+        scan->setInterval(45);
+        scan->setWindow(15);
+        scan->setActiveScan(true);
     }
 
     void on_scan_ended(NimBLEScanResults results){
@@ -329,7 +318,7 @@ namespace ble {
     }
 
     void start_scan() {
-        NimBLEDevice::getScan()->start(scanTime, on_scan_ended);
+        NimBLEDevice::getScan()->start(scan_duration, on_scan_ended);
     }
 
     void stop_scan() {
@@ -337,8 +326,8 @@ namespace ble {
     }
 
     bool send(const char* msg) {
-        if(txChar == nullptr) return false;
-        txChar->writeValue(msg);
+        if(char_tx != nullptr) return false;
+        char_tx->writeValue(msg);
         return true;
     }
 
