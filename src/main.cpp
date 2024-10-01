@@ -17,8 +17,20 @@ TFT_eSPI tft;
 uint8_t remote_batt_value;
 
 void on_dev_found(NimBLEAdvertisedDevice *dev) {
-    tft.printf("%s(%s)\n", dev->getName().c_str(), dev->getAddress().toString().c_str());
+    //tft.printf("\n", dev->getName().c_str(), dev->getAddress().toString().c_str());
     if(found_devs.available()>0) found_devs.push_back(dev);
+    tft.fillScreen(TFT_BLACK);
+    for(size_t i=0; i<found_devs.size(); i++) {
+        const auto &d = found_devs[i];
+        char msg[50];
+        size_t l = snprintf(
+            msg,
+            sizeof(msg),
+            "%s(%s)",
+            dev->getName().c_str(),
+            dev->getAddress().toString().c_str());
+        tft.drawString(msg, 0, i*tft.fontHeight());
+    }
 }
 
 void on_battery_updated(uint8_t val) {
@@ -105,7 +117,7 @@ void tick() {
 
         tft.fillCircle(CX, CY, R, TFT_DARKGREEN);
         tft.drawString(String("")+x+"/"+y, CX-25, CY-5);
-        tft.drawLine(CX, CY, CX+x*R/512, CY+y*R/512, down ? TFT_ORANGE : TFT_BLUE);
+        tft.drawWideLine(CX, CY, CX+x*R/512, CY-y*R/512, 2, down ? TFT_ORANGE : TFT_BLUE);
 
         String s = String("1="); s+=128 + x*128/512; s+="\n";
         ble::send(s.c_str());
@@ -125,7 +137,9 @@ void draw_batteries() {
         l = snprintf(msg, sizeof(msg), "R:%d  ", remote_batt_value);
     }
     snprintf(msg+l, sizeof(msg)-l, "I:%.2fV ", int_batt/1000.0f);
-    tft.drawString(msg, 1, tft.getViewportHeight() - tft.fontHeight());
+    int16_t h = tft.fontHeight();
+    tft.fillRect(0, tft.getViewportHeight() - h, tft.getViewportWidth(), h, TFT_BLACK);
+    tft.drawString(msg, 1, tft.getViewportHeight() - h);
 }
 
 void loop () {
