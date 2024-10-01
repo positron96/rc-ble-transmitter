@@ -326,7 +326,7 @@ namespace ble {
     }
 
     bool send(const char* msg) {
-        if(char_tx != nullptr) return false;
+        if(char_tx == nullptr) return false;
         char_tx->writeValue(msg);
         return true;
     }

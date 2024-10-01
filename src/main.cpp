@@ -136,7 +136,7 @@ void loop () {
     // }
 
     static size_t last_t = 0;
-    static bool v = false;
+    static bool fn_lights = false;
     if(millis() - last_t > 1000) {
         last_t = millis();
         // if(ble::is_connected()) {
@@ -145,7 +145,6 @@ void loop () {
         // }
 
         draw_batteries();
-
     }
 
     static etl::debounce<1, 20> bt_connect;
@@ -164,8 +163,8 @@ void loop () {
 
     if(bt_func.add(digitalRead(RIGHT_BUTTON) == LOW)) {
         if(bt_func.is_set() && ble::is_connected()) {
-            ble::send(v?"2=255\n" : "2=0\n");
-            v = !v;
+            ble::send(fn_lights?"2=255\n" : "2=0\n");
+            fn_lights = !fn_lights;
         }
     }
 
