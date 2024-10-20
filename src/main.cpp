@@ -7,6 +7,7 @@
 
 #include <etl/debounce.h>
 #include <etl/vector.h>
+#include <etl/array.h>
 
 #include "ble.h"
 
@@ -45,6 +46,14 @@ void on_dev_disconnected(NimBLEClient *dev) {
     ble::start_scan();
 }
 
+constexpr auto PIN_ANALOG = etl::make_array<int>(33, 32, 39, 38);
+constexpr auto PIN_JX = PIN_ANALOG[0];
+constexpr auto PIN_JY = PIN_ANALOG[1];
+constexpr int PIN_J = 25;
+constexpr auto PIN_HAT = etl::make_array<int>(37, 36, 15, 13, 12);
+constexpr auto PIN_SWITCHES = etl::make_array<int>(2, 17, 22, 21);
+constexpr int PIN_BLINKER = PIN_SWITCHES[3];
+
 void setup () {
     Serial.begin(115200);
     Serial.println("Starting NimBLE Client");
@@ -53,11 +62,17 @@ void setup () {
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
     pinMode(RIGHT_BUTTON, INPUT_PULLUP);
 
+    for(auto p: PIN_HAT) pinMode(p, INPUT);
+    for(auto p: PIN_SWITCHES) pinMode(p, INPUT_PULLUP);
+    pinMode(PIN_J, INPUT);
+
     tft.init();
+    tft.setRotation(3);
 
     tft.fillScreen(TFT_BLACK);
 
-    tft.setFreeFont(&FreeSans9pt7b);
+    //tft.setFreeFont(&FreeSans9pt7b);
+    tft.setFreeFont(&FreeSans12pt7b);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.println();
     tft.println("BLE");
@@ -67,13 +82,8 @@ void setup () {
     ble::set_battery_update_cb(on_battery_updated);
     ble::set_disconnected_cb(on_dev_disconnected);
     ble::start_scan();
+
 }
-
-
-constexpr int PIN_X = 15;
-constexpr int PIN_Y = 2;
-constexpr int PIN_C = 17;
-
 
 /** Rounded division. */
 template<typename T, typename U, std::enable_if_t<std::is_unsigned_v<U> >* =nullptr >
@@ -103,9 +113,9 @@ int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_
 }
 
 void tick() {
-    int x = analogRead(PIN_X);
-    int y = analogRead(PIN_Y);
-    bool down = digitalRead(PIN_C);
+    int x = analogRead(PIN_JX);
+    int y = analogRead(PIN_JY);
+    bool down = digitalRead(PIN_J);
     x = -to_centered(x, 465, 10);
     y = to_centered(y, 445, 10);
 
@@ -142,12 +152,44 @@ void draw_batteries() {
     tft.drawString(msg, 1, tft.getViewportHeight() - h);
 }
 
+int read_tristate(int pin) {
+    pinMode(pin, INPUT_PULLUP);
+    int v1 = digitalRead(pin);
+    pinMode(pin, INPUT_PULLDOWN);
+    int v2 = digitalRead(pin);
+    // Serial.printf("v1=%d v2=%d\n", v1, v2);
+    if(v1==v2) return v1 == LOW ? -1 : 1;
+    return 0;
+}
+
+void draw() {
+    char msg[64];
+    snprintf(msg, 64, "_ _ _ _ ");
+    for(size_t i=0; i<PIN_SWITCHES.size(); i++) {
+        if(digitalRead(PIN_SWITCHES[i]) == LOW) msg[i*2] = '+';
+    }
+
+    int t = read_tristate(PIN_BLINKER);
+    msg[3*2] = t==-1 ? '-' : t==1 ? '+' : '_';
+    tft.drawString(msg, 0, 10);
+
+    snprintf(msg, 64, "_ _ _ _ _ _ ");
+    for(size_t i=0; i<PIN_HAT.size(); i++) {
+        if(digitalRead(PIN_HAT[i]) == LOW) msg[i*2] = '+';
+    }
+    if(digitalRead(PIN_J)==LOW) msg[5*2] = '+';
+    tft.drawString(msg, 0, 40);
+}
+
 void loop () {
 
     // for(const auto &dev: *NimBLEDevice::getClientList()) {
     //     if(!dev->isConnected()) continue;
     //     Serial.printf("conn strength %d\n", dev->getRssi());
     // }
+    draw();
+    delay(10);
+    return;
 
     static size_t last_t = 0;
     static bool fn_lights = false;
