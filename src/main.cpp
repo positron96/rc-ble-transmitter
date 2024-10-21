@@ -1,64 +1,91 @@
-/*Using LVGL with Arduino requires some extra steps:
- *Be sure to read the docs here: https://docs.lvgl.io/master/integration/framework/arduino.html  */
+#include <type_traits>
+
 #include <Arduino.h>
 
 #include <lvgl.h>
 #include <misc/lv_event.h>
-
-#if LV_USE_TFT_ESPI
 #include <TFT_eSPI.h>
-#endif
 
+#include <NimBLEDevice.h>
+
+#include <etl/debounce.h>
+#include <etl/vector.h>
 #include <etl/array.h>
 
-/*To use the built-in examples and demos of LVGL uncomment the includes below respectively.
- *You also need to copy `lvgl/examples` to `lvgl/src/examples`. Similarly for the demos `lvgl/demos` to `lvgl/src/demos`.
- *Note that the `lv_examples` library is for LVGL v7 and you shouldn't install it for this version (since LVGL v8)
- *as the examples and demos are now part of the main LVGL library. */
+#include "ble.h"
 
-#include <demos/lv_demos.h>
+etl::vector<NimBLEAdvertisedDevice*, 5> found_devs;
 
-/*Set to your screen resolution and rotation*/
 #define TFT_HOR_RES   TFT_WIDTH
 #define TFT_VER_RES   TFT_HEIGHT
 #define TFT_ROTATION  LV_DISPLAY_ROTATION_270
-
-constexpr auto PIN_HAT = etl::make_array<int>(37, 36, 15, 13, 12);
-constexpr auto HAT_MAP = etl::make_array<int>(LV_KEY_DOWN, LV_KEY_ENTER, LV_KEY_LEFT, LV_KEY_UP, LV_KEY_RIGHT);
-
-/*LVGL draw into this buffer, 1/10 screen size usually works well. The size is in bytes*/
 #define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 10 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 
-#if LV_USE_LOG != 0
-void my_print( lv_log_level_t level, const char * buf )
-{
-    LV_UNUSED(level);
-    Serial.print(buf);
-    Serial.flush();
-}
-#endif
+uint8_t remote_batt_value;
 
-/* LVGL calls it when a rendered image needs to copied to the display*/
-void my_disp_flush( lv_display_t *disp, const lv_area_t *area, uint8_t * px_map)
-{
-    /*Copy `px map` to the `area`*/
+static lv_obj_t *list_devs;
+static lv_obj_t *lb_battery;
+static lv_obj_t *pnl_inputs;
 
-    /*For example ("my_..." functions needs to be implemented by you)
-    uint32_t w = lv_area_get_width(area);
-    uint32_t h = lv_area_get_height(area);
+static lv_obj_t *scr_devices;
+static lv_obj_t *scr_control;
 
-    my_set_window(area->x1, area->y1, w, h);
-    my_draw_bitmaps(px_map, w * h);
-     */
 
-    /*Call it to tell LVGL you are ready*/
-    lv_display_flush_ready(disp);
+static void on_dev_selected(lv_event_t * e) {
+    NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice*)lv_event_get_user_data(e);
+    ble::connect(dev);
+
+    lv_scr_load(scr_control);
+
+    // if(currentButton == NULL) return;
+    // lv_obj_move_foreground(currentButton);
+    // lv_obj_scroll_to_view(currentButton, LV_ANIM_ON);
 }
 
 
-void read_cb ( lv_indev_t * indev, lv_indev_data_t * data )
-{
+
+void on_dev_found(NimBLEAdvertisedDevice *dev) {
+
+    if(found_devs.full()) return;
+
+    found_devs.push_back(dev);
+
+    char msg[50];
+    size_t l = snprintf(
+        msg,
+        sizeof(msg),
+        "%s(%s)",
+        dev->getName().c_str(),
+        dev->getAddress().toString().c_str());
+    lv_obj_t *btn = lv_list_add_button(list_devs, nullptr, msg);
+    lv_obj_add_event_cb(btn, on_dev_selected, LV_EVENT_CLICKED, dev);
+}
+
+void on_battery_updated(uint8_t val) {
+    remote_batt_value = val;
+}
+
+void on_dev_disconnected(NimBLEClient *dev) {
+    Serial.print(dev->getPeerAddress().toString().c_str());
+    Serial.println(" Disconnected; starting scan");
+
+    found_devs.clear();
+    ble::start_scan();
+    lv_obj_clean(list_devs);
+    lv_scr_load(scr_devices);
+}
+
+constexpr auto PIN_ANALOG = etl::make_array<int>(33, 32, 39, 38);
+constexpr auto PIN_JX = PIN_ANALOG[0];
+constexpr auto PIN_JY = PIN_ANALOG[1];
+constexpr int PIN_J = 25;
+constexpr auto PIN_HAT = etl::make_array<int>(37, 36, 15, 13, 12);
+constexpr auto HAT_MAP = etl::make_array<int>(LV_KEY_DOWN, LV_KEY_ENTER, LV_KEY_LEFT, LV_KEY_UP, LV_KEY_RIGHT);
+constexpr auto PIN_SWITCHES = etl::make_array<int>(2, 17, 22, 21);
+constexpr int PIN_BLINKER = PIN_SWITCHES[3];
+
+static void inputdev_cb(lv_indev_t *indev, lv_indev_data_t *data ) {
     static int last_key = 0;
     int key_idx = -1;
     for(size_t i=0; i<PIN_HAT.size(); i++) {
@@ -73,233 +100,26 @@ void read_cb ( lv_indev_t * indev, lv_indev_data_t * data )
     //     Serial.printf("%d, %d, %d\n", data->key, data->state, key_idx);
 }
 
-/*use Arduinos millis() as tick source*/
-static uint32_t my_tick(void)
-{
+static uint32_t my_tick(void) {
     return millis();
 }
 
+void setup () {
+    Serial.begin(115200);
+    Serial.println("Starting NimBLE Client");
 
-
-
-/**********************
- *  STATIC PROTOTYPES
- **********************/
-static void selectors_create(lv_obj_t * parent);
-static void text_input_create(lv_obj_t * parent);
-static void msgbox_create(void);
-
-static void msgbox_event_cb(lv_event_t * e);
-static void ta_event_cb(lv_event_t * e);
-
-/**********************
- *  STATIC VARIABLES
- **********************/
-static lv_group_t * g;
-static lv_obj_t * tv;
-static lv_obj_t * t1;
-static lv_obj_t * t2;
-
-/**********************
- *      MACROS
- **********************/
-
-/**********************
- *   GLOBAL FUNCTIONS
- **********************/
-
-void lv_demo_keypad_encoder(void)
-{
-    g = lv_group_create();
-    lv_group_set_default(g);
-
-    lv_indev_t * indev = NULL;
-    for(;;) {
-        indev = lv_indev_get_next(indev);
-        if(!indev) {
-            break;
-        }
-
-        lv_indev_type_t indev_type = lv_indev_get_type(indev);
-        if(indev_type == LV_INDEV_TYPE_KEYPAD) {
-            lv_indev_set_group(indev, g);
-        }
-
-        if(indev_type == LV_INDEV_TYPE_ENCODER) {
-            lv_indev_set_group(indev, g);
-        }
-    }
-
-    tv = lv_tabview_create(lv_screen_active());
-
-    lv_tabview_set_tab_bar_size(tv, 30);
-
-    t1 = lv_tabview_add_tab(tv, "Selectors");
-    t2 = lv_tabview_add_tab(tv, "Text input");
-
-    selectors_create(t1);
-    text_input_create(t2);
-
-    msgbox_create();
-}
-
-/**********************
- *   STATIC FUNCTIONS
- **********************/
-
-static void selectors_create(lv_obj_t * parent)
-{
-    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(parent, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t * obj;
-
-    obj = lv_table_create(parent);
-    lv_table_set_cell_value(obj, 0, 0, "00");
-    lv_table_set_cell_value(obj, 0, 1, "01");
-    lv_table_set_cell_value(obj, 1, 0, "10");
-    lv_table_set_cell_value(obj, 1, 1, "11");
-    lv_table_set_cell_value(obj, 2, 0, "20");
-    lv_table_set_cell_value(obj, 2, 1, "21");
-    lv_table_set_cell_value(obj, 3, 0, "30");
-    lv_table_set_cell_value(obj, 3, 1, "31");
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_calendar_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_buttonmatrix_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_checkbox_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_slider_create(parent);
-    lv_slider_set_range(obj, 0, 10);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_switch_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_spinbox_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_dropdown_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    obj = lv_roller_create(parent);
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-
-    lv_obj_t * list = lv_list_create(parent);
-    lv_obj_update_layout(list);
-    if(lv_obj_get_height(list) > lv_obj_get_content_height(parent)) {
-        lv_obj_set_height(list, lv_obj_get_content_height(parent));
-    }
-
-    lv_list_add_button(list, LV_SYMBOL_OK, "Apply");
-    lv_list_add_button(list, LV_SYMBOL_CLOSE, "Close");
-    lv_list_add_button(list, LV_SYMBOL_EYE_OPEN, "Show");
-    lv_list_add_button(list, LV_SYMBOL_EYE_CLOSE, "Hide");
-    lv_list_add_button(list, LV_SYMBOL_TRASH, "Delete");
-    lv_list_add_button(list, LV_SYMBOL_COPY, "Copy");
-    lv_list_add_button(list, LV_SYMBOL_PASTE, "Paste");
-}
-
-static void text_input_create(lv_obj_t * parent)
-{
-    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
-
-    lv_obj_t * ta1 = lv_textarea_create(parent);
-    lv_obj_set_width(ta1, LV_PCT(100));
-    lv_textarea_set_one_line(ta1, true);
-    lv_textarea_set_placeholder_text(ta1, "Click with an encoder to show a keyboard");
-
-    lv_obj_t * ta2 = lv_textarea_create(parent);
-    lv_obj_set_width(ta2, LV_PCT(100));
-    lv_textarea_set_one_line(ta2, true);
-    lv_textarea_set_placeholder_text(ta2, "Type something");
-
-    lv_obj_t * kb = lv_keyboard_create(lv_screen_active());
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-
-    lv_obj_add_event_cb(ta1, ta_event_cb, LV_EVENT_ALL, kb);
-    lv_obj_add_event_cb(ta2, ta_event_cb, LV_EVENT_ALL, kb);
-}
-
-static void msgbox_create(void)
-{
-    lv_obj_t * mbox = lv_msgbox_create(NULL);
-    lv_msgbox_add_title(mbox, "Hi");
-    lv_msgbox_add_text(mbox, "Welcome to demo");
-
-    lv_obj_t * btn = lv_msgbox_add_footer_button(mbox, "Ok");
-    lv_obj_add_event_cb(btn, msgbox_event_cb, LV_EVENT_CLICKED, mbox);
-    lv_obj_set_size(btn, 40, 20);
-    lv_group_focus_obj(btn);
-    lv_obj_add_state(btn, LV_STATE_FOCUS_KEY);
-    lv_group_focus_freeze(g, true);
-
-    lv_obj_align(mbox, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_t * bg = lv_obj_get_parent(mbox);
-    lv_obj_set_style_bg_opa(bg, LV_OPA_70, 0);
-    lv_obj_set_style_bg_color(bg, lv_palette_main(LV_PALETTE_GREY), 0);
-}
-
-static void msgbox_event_cb(lv_event_t * e)
-{
-    lv_obj_t * msgbox = (lv_obj_t*)lv_event_get_user_data(e);
-
-    lv_msgbox_close(msgbox);
-    lv_group_focus_freeze(g, false);
-    lv_group_focus_obj(lv_obj_get_child(t1, 0));
-    lv_obj_scroll_to(t1, 0, 0, LV_ANIM_OFF);
-}
-
-static void ta_event_cb(lv_event_t * e)
-{
-    lv_indev_t * indev = lv_indev_active();
-    if(indev == NULL) return;
-    lv_indev_type_t indev_type = lv_indev_get_type(indev);
-
-    lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t * ta = (lv_obj_t*)lv_event_get_target(e);
-    lv_obj_t * kb = (lv_obj_t*)lv_event_get_user_data(e);
-
-    if(code == LV_EVENT_CLICKED && indev_type == LV_INDEV_TYPE_ENCODER) {
-        lv_keyboard_set_textarea(kb, ta);
-        lv_obj_remove_flag(kb, LV_OBJ_FLAG_HIDDEN);
-        lv_group_focus_obj(kb);
-        lv_group_set_editing(lv_obj_get_group(kb), kb != NULL);
-        lv_obj_set_height(tv, LV_VER_RES / 2);
-        lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    }
-
-    if(code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
-        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_height(tv, LV_VER_RES);
-    }
-}
-
-
-
-
-void setup()
-{
-    String LVGL_Arduino = "Hello Arduino! ";
-    LVGL_Arduino += String('V') + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
-
-    Serial.begin( 115200 );
-    Serial.println( LVGL_Arduino );
+    analogReadResolution(10);
+    pinMode(LEFT_BUTTON, INPUT_PULLUP);
+    pinMode(RIGHT_BUTTON, INPUT_PULLUP);
 
     for(auto p: PIN_HAT) pinMode(p, INPUT);
+    for(auto p: PIN_SWITCHES) pinMode(p, INPUT_PULLUP);
+    pinMode(PIN_J, INPUT);
 
     lv_init();
 
-    /*Set a tick source so that LVGL will know how much time elapsed. */
     lv_tick_set_cb(my_tick);
 
-    /* register print function for debugging */
 #if LV_USE_LOG != 0
     lv_log_register_print_cb( my_print );
 #endif
@@ -309,50 +129,179 @@ void setup()
     /*TFT_eSPI can be enabled lv_conf.h to initialize the display in a simple way*/
     disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
     lv_display_set_rotation(disp, TFT_ROTATION);
-
 #else
-    /*Else create a display yourself*/
-    disp = lv_display_create(TFT_HOR_RES, TFT_VER_RES);
-    lv_display_set_flush_cb(disp, my_disp_flush);
-    lv_display_set_buffers(disp, draw_buf, NULL, sizeof(draw_buf), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    #error "TFT_eSPI nto set"
 #endif
 
     lv_indev_t * indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER );
-    lv_indev_set_read_cb(indev, read_cb);
-    // lv_indev_set_group(indev, lv_group_get_default());
-
-    /* Create a simple label
-     * ---------------------
-     lv_obj_t *label = lv_label_create( lv_screen_active() );
-     lv_label_set_text( label, "Hello Arduino, I'm LVGL!" );
-     lv_obj_align( label, LV_ALIGN_CENTER, 0, 0 );
-
-     * Try an example. See all the examples
-     *  - Online: https://docs.lvgl.io/master/examples.html
-     *  - Source codes: https://github.com/lvgl/lvgl/tree/master/examples
-     * ----------------------------------------------------------------
-
-     lv_example_btn_1();
-
-     * Or try out a demo. Don't forget to enable the demos in lv_conf.h. E.g. LV_USE_DEMO_WIDGETS
-     * -------------------------------------------------------------------------------------------
+    lv_indev_set_read_cb(indev, inputdev_cb);
 
 
-     */
-    //lv_demo_widgets();
-    lv_demo_keypad_encoder();
+    lb_battery = lv_label_create(lv_layer_top());
+    lv_obj_align( lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
+    lv_label_set_text(lb_battery, "[battery]" );
 
-    // lv_obj_t *label = lv_label_create( lv_screen_active() );
-    // lv_label_set_text( label, "Hello Arduino, I'm LVGL!" );
-    // lv_obj_align( label, LV_ALIGN_CENTER, 0, 0 );
+    scr_devices = lv_obj_create(nullptr);
+    list_devs = lv_list_create(scr_devices);
 
+    scr_control = lv_obj_create(nullptr);
+    pnl_inputs = lv_label_create(scr_control);
+    lv_label_set_text(pnl_inputs, "[input]");
 
-    Serial.println( "Setup done" );
+    ble::init();
+    ble::set_dev_found_cb(on_dev_found);
+    ble::set_battery_update_cb(on_battery_updated);
+    ble::set_disconnected_cb(on_dev_disconnected);
+    ble::start_scan();
+
 }
 
-void loop()
-{
-    lv_timer_handler(); /* let the GUI do its work */
-    delay(5); /* let this time pass */
+/** Rounded division. */
+template<typename T, typename U, std::enable_if_t<std::is_unsigned_v<U> >* =nullptr >
+T rdiv(const T x, const U y) {
+    T quot = x / y;
+    T rem = x % y;
+    U ty = y-1;
+    if (x >= 0) {
+        return quot + (rem > (ty/2));
+    } else {
+        return quot - (rem < (-ty/2));
+    }
+}
+
+int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_t deadzone = 0) {
+    //constexpr uint8_t center = 512;
+    constexpr uint16_t in_range = 512;
+    const uint16_t out_range = in_range - deadzone;
+    int16_t ret = v - center;
+    if(deadzone != 0) {
+        uint16_t mag = abs(ret);
+        if(mag < deadzone) return 0;
+        else return (ret>0?1:-1) * rdiv((mag-deadzone)*in_range, out_range);
+    } else {
+        return ret;
+    }
+}
+
+// static void on_input_panel_evt(lv_event_t * e) {
+//     lv_obj_t *obj = (lv_obj_t*)lv_event_get_target(e);
+//     lv_layer_t * layer = lv_event_get_layer(e);
+//     lv_draw_arc(layer, arc);
+//     tft.fillRect(0, 20, tft.width(), 16, TFT_BLACK);
+
+//     constexpr int CX = 65, CY=120, R=50;
+
+//     tft.fillCircle(CX, CY, R, TFT_DARKGREEN);
+//     tft.drawString(String("")+x+"/"+y, CX-25, CY-5);
+//     tft.drawWideLine(CX, CY, CX+x*R/512, CY-y*R/512, 2, down ? TFT_ORANGE : TFT_BLUE);
+// }
+
+void tick() {
+    int x = analogRead(PIN_JX);
+    int y = analogRead(PIN_JY);
+    bool down = digitalRead(PIN_J);
+    x = -to_centered(x, 465, 10);
+    y = to_centered(y, 445, 10);
+
+    static int last_x=-1000, last_y=0;
+    if(x!=last_x || y!=last_y) {
+        String s = String("1="); s+=128 + x*128/512; s+="\n";
+        ble::send(s.c_str());
+        s = String("0="); s+= 128 + y*128/512; s+="\n";
+        ble::send(s.c_str());
+
+        //lv_obj_invalidate(input_pnl);
+        lv_label_set_text(pnl_inputs, s.c_str());
+    }
+    last_x = x;
+    last_y = y;
+}
+
+void draw_batteries() {
+    constexpr int ADC2 = 580, V2 = 4200,
+        ADC1 = 428, V1 = 3200;
+    int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
+    char msg[100]; size_t l=0;
+    if(ble::is_connected()) {
+        l = snprintf(msg, sizeof(msg), "R:%d  ", remote_batt_value);
+    }
+    snprintf(msg+l, sizeof(msg)-l, "I:%.2fV ", int_batt/1000.0f);
+
+    lv_label_set_text(lb_battery, msg);
+}
+
+int read_tristate(int pin) {
+    pinMode(pin, INPUT_PULLUP);
+    int v1 = digitalRead(pin);
+    pinMode(pin, INPUT_PULLDOWN);
+    int v2 = digitalRead(pin);
+    // Serial.printf("v1=%d v2=%d\n", v1, v2);
+    if(v1==v2) return v1 == LOW ? -1 : 1;
+    return 0;
+}
+
+// void draw() {
+//     char msg[64];
+//     snprintf(msg, 64, "_ _ _ _ ");
+//     for(size_t i=0; i<PIN_SWITCHES.size(); i++) {
+//         if(digitalRead(PIN_SWITCHES[i]) == LOW) msg[i*2] = '+';
+//     }
+
+//     int t = read_tristate(PIN_BLINKER);
+//     msg[3*2] = t==-1 ? '-' : t==1 ? '+' : '_';
+//     tft.drawString(msg, 0, 10);
+
+//     snprintf(msg, 64, "_ _ _ _ _ _ ");
+//     for(size_t i=0; i<PIN_HAT.size(); i++) {
+//         if(digitalRead(PIN_HAT[i]) == LOW) msg[i*2] = '+';
+//     }
+//     if(digitalRead(PIN_J)==LOW) msg[5*2] = '+';
+//     tft.drawString(msg, 0, 40);
+// }
+
+void loop () {
+
+    // for(const auto &dev: *NimBLEDevice::getClientList()) {
+    //     if(!dev->isConnected()) continue;
+    //     Serial.printf("conn strength %d\n", dev->getRssi());
+    // }
+    // draw();
+    // delay(10);
+    // return;
+
+    static size_t last_t = 0;
+    static bool fn_lights = false;
+    if(millis() - last_t > 1000) {
+        last_t = millis();
+        // if(ble::is_connected()) {
+        //     ble::send(v ? "2=255\n": "2=0\n");
+        //     v = !v;
+        // }
+
+        draw_batteries();
+    }
+
+    static etl::debounce<1, 20> bt_connect;
+    static etl::debounce<1, 20> bt_func;
+
+    if(bt_connect.has_changed() && bt_connect.is_held() && ble::is_connected()) {
+        ble::disconnect();
+    }
+
+    if(bt_func.add(digitalRead(RIGHT_BUTTON) == LOW)) {
+        if(bt_func.is_set() && ble::is_connected()) {
+            ble::send(fn_lights?"2=255\n" : "2=0\n");
+            fn_lights = !fn_lights;
+        }
+    }
+
+    if(ble::is_connected()) {
+        tick();
+    }
+
+    lv_timer_handler();
+
+    delay(50);
+
 }
