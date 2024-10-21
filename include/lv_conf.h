@@ -138,11 +138,11 @@
 	#define LV_DRAW_SW_SUPPORT_RGB565		1
 	#define LV_DRAW_SW_SUPPORT_RGB565A8		1
 	#define LV_DRAW_SW_SUPPORT_RGB888		1
-	#define LV_DRAW_SW_SUPPORT_XRGB8888		1
+	#define LV_DRAW_SW_SUPPORT_XRGB8888		0
 	#define LV_DRAW_SW_SUPPORT_ARGB8888		1
-	#define LV_DRAW_SW_SUPPORT_L8			1
-	#define LV_DRAW_SW_SUPPORT_AL88			1
-	#define LV_DRAW_SW_SUPPORT_A8			1
+	#define LV_DRAW_SW_SUPPORT_L8			0
+	#define LV_DRAW_SW_SUPPORT_AL88			0
+	#define LV_DRAW_SW_SUPPORT_A8			0
 	#define LV_DRAW_SW_SUPPORT_I1			1
 
 	/* Set the number of draw unit.
@@ -183,78 +183,6 @@
     #define LV_USE_DRAW_SW_COMPLEX_GRADIENTS    0
 #endif
 
-/* Use NXP's VG-Lite GPU on iMX RTxxx platforms. */
-#define LV_USE_DRAW_VGLITE 0
-
-#if LV_USE_DRAW_VGLITE
-    /* Enable blit quality degradation workaround recommended for screen's dimension > 352 pixels. */
-    #define LV_USE_VGLITE_BLIT_SPLIT 0
-
-    #if LV_USE_OS
-        /* Use additional draw thread for VG-Lite processing.*/
-        #define LV_USE_VGLITE_DRAW_THREAD 1
-
-        #if LV_USE_VGLITE_DRAW_THREAD
-            /* Enable VGLite draw async. Queue multiple tasks and flash them once to the GPU. */
-            #define LV_USE_VGLITE_DRAW_ASYNC 1
-        #endif
-    #endif
-
-    /* Enable VGLite asserts. */
-    #define LV_USE_VGLITE_ASSERT 0
-#endif
-
-/* Use NXP's PXP on iMX RTxxx platforms. */
-#define LV_USE_DRAW_PXP 0
-
-#if LV_USE_DRAW_PXP
-    #if LV_USE_OS
-        /* Use additional draw thread for PXP processing.*/
-        #define LV_USE_PXP_DRAW_THREAD 1
-    #endif
-
-    /* Enable PXP asserts. */
-    #define LV_USE_PXP_ASSERT 0
-#endif
-
-/* Use Renesas Dave2D on RA  platforms. */
-#define LV_USE_DRAW_DAVE2D 0
-
-/* Draw using cached SDL textures*/
-#define LV_USE_DRAW_SDL 0
-
-/* Use VG-Lite GPU. */
-#define LV_USE_DRAW_VG_LITE 0
-
-#if LV_USE_DRAW_VG_LITE
-    /* Enable VG-Lite custom external 'gpu_init()' function */
-    #define LV_VG_LITE_USE_GPU_INIT 0
-
-    /* Enable VG-Lite assert. */
-    #define LV_VG_LITE_USE_ASSERT 0
-
-    /* VG-Lite flush commit trigger threshold. GPU will try to batch these many draw tasks. */
-    #define LV_VG_LITE_FLUSH_MAX_COUNT 8
-
-    /* Enable border to simulate shadow
-     * NOTE: which usually improves performance,
-     * but does not guarantee the same rendering quality as the software. */
-    #define LV_VG_LITE_USE_BOX_SHADOW 0
-
-    /* VG-Lite gradient maximum cache number.
-     * NOTE: The memory usage of a single gradient image is 4K bytes.
-     */
-    #define LV_VG_LITE_GRAD_CACHE_CNT 32
-
-    /* VG-Lite stroke maximum cache number.
-     */
-    #define LV_VG_LITE_STROKE_CACHE_CNT 32
-
-#endif
-
-/*=======================
- * FEATURE CONFIGURATION
- *=======================*/
 
 /*-------------
  * Logging
@@ -386,31 +314,6 @@
 /*Enable property name support*/
 #define LV_USE_OBJ_PROPERTY_NAME 1
 
-/* VG-Lite Simulator */
-/*Requires: LV_USE_THORVG_INTERNAL or LV_USE_THORVG_EXTERNAL */
-#define LV_USE_VG_LITE_THORVG  0
-
-#if LV_USE_VG_LITE_THORVG
-
-    /*Enable LVGL's blend mode support*/
-    #define LV_VG_LITE_THORVG_LVGL_BLEND_SUPPORT 0
-
-    /*Enable YUV color format support*/
-    #define LV_VG_LITE_THORVG_YUV_SUPPORT 0
-
-    /*Enable Linear gradient extension support*/
-    #define LV_VG_LITE_THORVG_LINEAR_GRADIENT_EXT_SUPPORT 0
-
-    /*Enable 16 pixels alignment*/
-    #define LV_VG_LITE_THORVG_16PIXELS_ALIGN 1
-
-    /*Buffer address alignment*/
-    #define LV_VG_LITE_THORVG_BUF_ADDR_ALIGN 64
-
-    /*Enable multi-thread render*/
-    #define LV_VG_LITE_THORVG_THREAD_RENDER 0
-
-#endif
 
 /*=====================
  *  COMPILER SETTINGS
@@ -667,10 +570,10 @@
 #if LV_USE_THEME_DEFAULT
 
     /*0: Light mode; 1: Dark mode*/
-    #define LV_THEME_DEFAULT_DARK 1
+    #define LV_THEME_DEFAULT_DARK  1
 
     /*1: Enable grow on press*/
-    #define LV_THEME_DEFAULT_GROW 1
+    #define LV_THEME_DEFAULT_GROW  1
 
     /*Default transition time in [ms]*/
     #define LV_THEME_DEFAULT_TRANSITION_TIME 80

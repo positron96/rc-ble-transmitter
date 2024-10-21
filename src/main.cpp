@@ -31,21 +31,14 @@ static lv_obj_t *pnl_inputs;
 static lv_obj_t *scr_devices;
 static lv_obj_t *scr_control;
 
-
 static void on_dev_selected(lv_event_t * e) {
     NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice*)lv_event_get_user_data(e);
     ble::connect(dev);
-
     lv_scr_load(scr_control);
-
-    // if(currentButton == NULL) return;
-    // lv_obj_move_foreground(currentButton);
-    // lv_obj_scroll_to_view(currentButton, LV_ANIM_ON);
 }
 
-
-
 void on_dev_found(NimBLEAdvertisedDevice *dev) {
+    //Serial.printf("found: %s (%s)\n",  dev->getName().c_str(), dev->getAddress().toString().c_str());
 
     if(found_devs.full()) return;
 
@@ -55,7 +48,7 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
     size_t l = snprintf(
         msg,
         sizeof(msg),
-        "%s(%s)",
+        "%s (%s)",
         dev->getName().c_str(),
         dev->getAddress().toString().c_str());
     lv_obj_t *btn = lv_list_add_button(list_devs, nullptr, msg);
@@ -70,10 +63,12 @@ void on_dev_disconnected(NimBLEClient *dev) {
     Serial.print(dev->getPeerAddress().toString().c_str());
     Serial.println(" Disconnected; starting scan");
 
-    found_devs.clear();
     ble::start_scan();
-    lv_obj_clean(list_devs);
-    lv_scr_load(scr_devices);
+    lv_screen_load(scr_devices);
+}
+
+void disconnect_cb(lv_event_t * e) {
+    ble::disconnect();
 }
 
 constexpr auto PIN_ANALOG = etl::make_array<int>(33, 32, 39, 38);
@@ -96,13 +91,39 @@ static void inputdev_cb(lv_indev_t *indev, lv_indev_data_t *data ) {
         data->state = LV_INDEV_STATE_PRESSED;
     }  else data->state = LV_INDEV_STATE_RELEASED;
     data->key = last_key;
-    // if(key_idx!=-1)
-    //     Serial.printf("%d, %d, %d\n", data->key, data->state, key_idx);
+    if(key_idx!=-1)
+        Serial.printf("%d, %d, %d\n", data->key, data->state, key_idx);
 }
 
 static uint32_t my_tick(void) {
     return millis();
 }
+
+void scr_load_cb(lv_event_t * e) {
+    lv_obj_t *t = lv_event_get_target_obj(e);
+    //if(t == scr_devices) {
+        found_devs.clear();
+        lv_obj_clean(list_devs);
+        lv_list_add_text(list_devs, "Receivers found:");
+        //lv_group_focus_obj(list_devs);
+
+    //     lv_obj_remove_flag(scr_devices, LV_OBJ_FLAG_HIDDEN);
+    //     lv_obj_add_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
+    // } else {
+    //     lv_obj_remove_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
+    //     lv_obj_add_flag(scr_devices, LV_OBJ_FLAG_HIDDEN);
+    // }
+}
+
+void fn_cb(lv_event_t *e) {
+    lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
+    int fn = (int)lv_event_get_user_data(e);
+    bool v = lv_obj_has_state(obj, LV_STATE_CHECKED);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "%d=%d\n", fn, v?255:0);
+    ble::send(msg);
+}
+
 
 void setup () {
     Serial.begin(115200);
@@ -136,18 +157,52 @@ void setup () {
     lv_indev_t * indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER );
     lv_indev_set_read_cb(indev, inputdev_cb);
-
+    lv_group_t *g = lv_group_create();
+    lv_group_set_default(g);
+    lv_indev_set_group(indev, g);
 
     lb_battery = lv_label_create(lv_layer_top());
-    lv_obj_align( lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
-    lv_label_set_text(lb_battery, "[battery]" );
+    lv_obj_align(lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
 
     scr_devices = lv_obj_create(nullptr);
+    lv_obj_set_style_pad_top(scr_devices, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
+    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+
+    lv_obj_t * label;
+
     list_devs = lv_list_create(scr_devices);
+    lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
 
     scr_control = lv_obj_create(nullptr);
+    //lv_obj_add_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_pad_top(scr_control, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(scr_control, 5, LV_PART_MAIN);
+    //lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+
+    lv_screen_load(scr_devices);
+
+
     pnl_inputs = lv_label_create(scr_control);
-    lv_label_set_text(pnl_inputs, "[input]");
+    lv_obj_align(pnl_inputs, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *bt_disconnect = lv_button_create(scr_control);
+    lv_obj_add_event_cb(bt_disconnect, disconnect_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_align(bt_disconnect, LV_ALIGN_BOTTOM_LEFT, -4, -4);
+    label = lv_label_create(bt_disconnect); lv_label_set_text(label, "DISC");  lv_obj_center(label);
+
+    lv_obj_t *bt1 = lv_button_create(scr_control);
+    lv_obj_add_flag(bt1, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(bt1, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(bt1); lv_label_set_text(label, "HDL"); lv_obj_center(label);
+    lv_obj_add_event_cb(bt1, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
+    bt_disconnect = bt1;
+
+    bt1 = lv_button_create(scr_control);
+    lv_obj_add_flag(bt1, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(bt1, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(bt1); lv_label_set_text(label, "MKR"); lv_obj_center(label);
+    lv_obj_add_event_cb(bt1, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
@@ -206,13 +261,17 @@ void tick() {
 
     static int last_x=-1000, last_y=0;
     if(x!=last_x || y!=last_y) {
-        String s = String("1="); s+=128 + x*128/512; s+="\n";
-        ble::send(s.c_str());
-        s = String("0="); s+= 128 + y*128/512; s+="\n";
-        ble::send(s.c_str());
+        char msg[32];
+        snprintf(msg, sizeof(msg), "1=%d\n0=%d\n",
+            128 + x*128/512,
+            128 + y*128/512
+        );
+        ble::send(msg);
+
+        //String s = String(x)+"/"+y;
 
         //lv_obj_invalidate(input_pnl);
-        lv_label_set_text(pnl_inputs, s.c_str());
+        lv_label_set_text(pnl_inputs, msg);
     }
     last_x = x;
     last_y = y;
@@ -282,26 +341,12 @@ void loop () {
         draw_batteries();
     }
 
-    static etl::debounce<1, 20> bt_connect;
-    static etl::debounce<1, 20> bt_func;
-
-    if(bt_connect.has_changed() && bt_connect.is_held() && ble::is_connected()) {
-        ble::disconnect();
-    }
-
-    if(bt_func.add(digitalRead(RIGHT_BUTTON) == LOW)) {
-        if(bt_func.is_set() && ble::is_connected()) {
-            ble::send(fn_lights?"2=255\n" : "2=0\n");
-            fn_lights = !fn_lights;
-        }
-    }
-
     if(ble::is_connected()) {
         tick();
     }
 
     lv_timer_handler();
 
-    delay(50);
+    delay(5);
 
 }
