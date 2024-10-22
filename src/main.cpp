@@ -25,7 +25,7 @@ etl::vector<NimBLEAdvertisedDevice*, 5> found_devs;
 #define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 10 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 
-uint8_t remote_batt_value;
+uint8_t rem_batt_val;
 
 static lv_obj_t *list_devs;
 static lv_obj_t *statusbar;
@@ -85,7 +85,7 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
 }
 
 void on_battery_updated(uint8_t val) {
-    remote_batt_value = val;
+    rem_batt_val = val;
 }
 
 void on_dev_disconnected(NimBLEClient *dev) {
@@ -140,6 +140,7 @@ static uint32_t my_tick(void) {
 void fn_cb(lv_event_t *e) {
     lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
     int fn = (int)lv_event_get_user_data(e);
+    if(fn==0) return;
     bool v = lv_obj_has_state(obj, LV_STATE_CHECKED);
     char msg[32];
     snprintf(msg, sizeof(msg), "%d=%d\n", fn, v?255:0);
@@ -212,7 +213,13 @@ void setup () {
     //lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
 
     pnl_inputs = lv_label_create(scr_control);
+    // pnl_inputs = lv_obj_create(scr_control);
+    // lv_obj_t *ball = lv_obj_create(pnl_inputs);
+    // lv_obj_set_pos(ball, lv_pct(50), lv_pct(50));
+    // lv_obj_set_size(ball, 10, 10);
+    // lv_obj_set_style_radius(ball , LV_RADIUS_CIRCLE, 0);
     lv_obj_align(pnl_inputs, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_size(pnl_inputs, 50, 50);
 
     lv_obj_t *bt_disconnect = lv_button_create(scr_control);
     lv_obj_add_event_cb(bt_disconnect, disconnect_cb, LV_EVENT_CLICKED, nullptr);
@@ -224,15 +231,28 @@ void setup () {
     bt_functions[0] = b;
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
     lv_obj_align_to(b, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, "HDL"); lv_obj_center(label);
+    label = lv_label_create(b); lv_label_set_text(label, "H"); lv_obj_center(label);
     lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
 
     b = lv_button_create(scr_control);
     bt_functions[1] = b;
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
     lv_obj_align_to(b, bt_functions[0], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, "MKR"); lv_obj_center(label);
+    label = lv_label_create(b); lv_label_set_text(label, "M"); lv_obj_center(label);
     lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
+
+    b = lv_button_create(scr_control);
+    bt_functions[2] = b;
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(b, bt_functions[1], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(b); lv_label_set_text(label, "<"); lv_obj_center(label);
+    // lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    b = lv_button_create(scr_control);
+    bt_functions[3] = b;
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(b, bt_functions[2], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(b); lv_label_set_text(label, ">"); lv_obj_center(label);
+    // lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
@@ -310,10 +330,9 @@ void read_controls_input() {
         );
         ble::send(msg);
 
-        //String s = String(x)+"/"+y;
-
-        //lv_obj_invalidate(input_pnl);
         lv_label_set_text(pnl_inputs, msg);
+        //lv_obj_t *ball = lv_obj_get_child(pnl_inputs, 0);
+        //lv_obj_set_pos(ball, lv_pct(50 + x*50/512), lv_pct(50 + x*50/512));
     }
     last_x = x;
     last_y = y;
@@ -322,7 +341,14 @@ void read_controls_input() {
     lv_obj_set_state(bt_functions[0], LV_STATE_CHECKED, st);
 
     int t = read_tristate(PIN_BLINKER);
-
+    if(t>0) {
+        lv_obj_set_state(bt_functions[2], LV_STATE_CHECKED, true);
+    } else if(t<0) {
+        lv_obj_set_state(bt_functions[3], LV_STATE_CHECKED, true);
+    } else {
+        lv_obj_set_state(bt_functions[2], LV_STATE_CHECKED, false);
+        lv_obj_set_state(bt_functions[3], LV_STATE_CHECKED, false);
+    }
 }
 
 void draw_batteries() {
@@ -332,12 +358,21 @@ void draw_batteries() {
 
     int idx = map(int_batt, 3300, 4200, 0, 4);
     idx = constrain(idx, 0, 4);
-    lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY - idx);
-    lv_label_set_text_fmt(lb_batt_intl, "%dmV ", int_batt);
+
+    static int last_int_batt;
+    if(last_int_batt!=int_batt/100) {
+        lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY - idx);
+        lv_label_set_text_fmt(lb_batt_intl, "%dmV ", int_batt);
+        last_int_batt = int_batt/100;
+    }
 
     if(ble::is_connected()) {
-        lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
-        lv_label_set_text_fmt(lb_batt_rem, "%d", remote_batt_value);
+        static int last_rem_batt;
+        if(last_rem_batt != rem_batt_val) {
+            lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+            lv_label_set_text_fmt(lb_batt_rem, "%d", rem_batt_val);
+            last_rem_batt = rem_batt_val;
+        }
     }
 }
 
