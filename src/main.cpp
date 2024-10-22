@@ -111,25 +111,16 @@ constexpr int PIN_BLINKER = PIN_SWITCHES[3];
 
 
 static void inputdev_cb(lv_indev_t *indev, lv_indev_data_t *data ) {
-    static etl::queue< etl::pair<size_t, bool>, 5> event_queue;
-    static etl::bitset<PIN_HAT.size()> state;
-
+    static int last_key = 0;
+    int key_idx = -1;
     for(size_t i=0; i<PIN_HAT.size(); i++) {
-        bool st = digitalRead(PIN_HAT[i]) == LOW;
-        if(st!=state[i] && !event_queue.full()) {
-            event_queue.push(etl::make_pair(i, st));
-            state[i] = st;
-        }
+        if(digitalRead(PIN_HAT[i]) == LOW) key_idx = i;
     }
-
-    if(!event_queue.empty()) {
-        const auto p = event_queue.front();
-        data->key = HAT_MAP[p.first];
-        data->state = p.second ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-        Serial.printf("%d (%d), %d\n", p.first, data->key, data->state);
-        event_queue.pop();
-    }
-
+    if (key_idx!=-1) {
+        last_key = HAT_MAP[key_idx];
+        data->state = LV_INDEV_STATE_PRESSED;
+    }  else data->state = LV_INDEV_STATE_RELEASED;
+    data->key = last_key;
 }
 
 static uint32_t my_tick(void) {
@@ -186,11 +177,12 @@ void setup () {
 
     statusbar = lv_layer_top();
     lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_text_color(statusbar, lv_color_hex(0x88888), LV_PART_MAIN);
 
     im_batt_intl = lv_image_create(statusbar); lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
     lb_batt_intl = lv_label_create(statusbar);
     im_bt = lv_image_create(statusbar);  lv_image_set_src(im_bt, LV_SYMBOL_BLUETOOTH);
-    im_batt_rem = lv_image_create(statusbar); lv_image_set_src(lb_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
+    im_batt_rem = lv_image_create(statusbar); lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
     lb_batt_rem = lv_label_create(statusbar);
 
     //lv_obj_align(lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
@@ -314,6 +306,14 @@ int read_tristate(int pin) {
     return 0;
 }
 
+void set_checked_state(lv_obj_t *bt, bool checked) {
+    bool cur = lv_obj_has_state(bt, LV_STATE_CHECKED);
+    if(cur!=checked) {
+        lv_obj_set_state(bt, LV_STATE_CHECKED, checked);
+        lv_obj_send_event(bt, LV_EVENT_VALUE_CHANGED, nullptr);
+    }
+}
+
 void read_controls_input() {
     int x = analogRead(PIN_JX);
     int y = analogRead(PIN_JY);
@@ -337,17 +337,17 @@ void read_controls_input() {
     last_x = x;
     last_y = y;
 
-    bool st = digitalRead(PIN_SWITCHES[0]) == LOW;
-    lv_obj_set_state(bt_functions[0], LV_STATE_CHECKED, st);
+    bool st = digitalRead(PIN_SWITCHES[1]) == LOW;
+    set_checked_state(bt_functions[0], st);
 
     int t = read_tristate(PIN_BLINKER);
     if(t>0) {
-        lv_obj_set_state(bt_functions[2], LV_STATE_CHECKED, true);
+        set_checked_state(bt_functions[3], true);
     } else if(t<0) {
-        lv_obj_set_state(bt_functions[3], LV_STATE_CHECKED, true);
+        set_checked_state(bt_functions[2], true);
     } else {
-        lv_obj_set_state(bt_functions[2], LV_STATE_CHECKED, false);
-        lv_obj_set_state(bt_functions[3], LV_STATE_CHECKED, false);
+        set_checked_state(bt_functions[3], false);
+        set_checked_state(bt_functions[2], false);
     }
 }
 
@@ -356,12 +356,15 @@ void draw_batteries() {
         ADC1 = 428, V1 = 3200;
     int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
 
-    int idx = map(int_batt, 3300, 4200, 0, 4);
+    int idx = map(int_batt, 3300, 4000, 0, 4);
     idx = constrain(idx, 0, 4);
+
+    char glyph[] = {'\xEF', '\x89', '\x84', 0};
 
     static int last_int_batt;
     if(last_int_batt!=int_batt/100) {
-        lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY - idx);
+        glyph[2] = '\x84' - idx;
+        lv_image_set_src(im_batt_intl, glyph);
         lv_label_set_text_fmt(lb_batt_intl, "%dmV ", int_batt);
         last_int_batt = int_batt/100;
     }
@@ -369,7 +372,7 @@ void draw_batteries() {
     if(ble::is_connected()) {
         static int last_rem_batt;
         if(last_rem_batt != rem_batt_val) {
-            lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+            lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
             lv_label_set_text_fmt(lb_batt_rem, "%d", rem_batt_val);
             last_rem_batt = rem_batt_val;
         }
