@@ -11,6 +11,9 @@
 #include <etl/debounce.h>
 #include <etl/vector.h>
 #include <etl/array.h>
+#include <etl/bitset.h>
+#include <etl/queue.h>
+#include <etl/utility.h>
 
 #include "ble.h"
 
@@ -25,16 +28,42 @@ uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 uint8_t remote_batt_value;
 
 static lv_obj_t *list_devs;
-static lv_obj_t *lb_battery;
+static lv_obj_t *statusbar;
+static lv_obj_t *lb_batt_intl;
+static lv_obj_t *im_batt_intl;
+static lv_obj_t *lb_batt_rem;
+static lv_obj_t *im_batt_rem;
+static lv_obj_t *im_bt;
+
 static lv_obj_t *pnl_inputs;
 
 static lv_obj_t *scr_devices;
 static lv_obj_t *scr_control;
+static etl::array<lv_obj_t*, 4> bt_functions;
+
+static void update_connected(bool c) {
+    if(c) {
+        lv_obj_remove_flag(im_bt, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(lb_batt_rem, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(im_batt_rem, LV_OBJ_FLAG_HIDDEN);
+        lv_screen_load(scr_control);
+    } else {
+        ble::start_scan();
+        lv_obj_add_flag(im_bt, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(lb_batt_rem, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(im_batt_rem, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_clean(list_devs);
+        lv_list_add_text(list_devs, "Receivers found:");
+
+        lv_screen_load(scr_devices);
+    }
+}
 
 static void on_dev_selected(lv_event_t * e) {
     NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice*)lv_event_get_user_data(e);
     ble::connect(dev);
-    lv_scr_load(scr_control);
+    update_connected(true);
 }
 
 void on_dev_found(NimBLEAdvertisedDevice *dev) {
@@ -63,8 +92,7 @@ void on_dev_disconnected(NimBLEClient *dev) {
     Serial.print(dev->getPeerAddress().toString().c_str());
     Serial.println(" Disconnected; starting scan");
 
-    ble::start_scan();
-    lv_screen_load(scr_devices);
+    update_connected(false);
 }
 
 void disconnect_cb(lv_event_t * e) {
@@ -80,40 +108,34 @@ constexpr auto HAT_MAP = etl::make_array<int>(LV_KEY_DOWN, LV_KEY_ENTER, LV_KEY_
 constexpr auto PIN_SWITCHES = etl::make_array<int>(2, 17, 22, 21);
 constexpr int PIN_BLINKER = PIN_SWITCHES[3];
 
+
+
 static void inputdev_cb(lv_indev_t *indev, lv_indev_data_t *data ) {
-    static int last_key = 0;
-    int key_idx = -1;
+    static etl::queue< etl::pair<size_t, bool>, 5> event_queue;
+    static etl::bitset<PIN_HAT.size()> state;
+
     for(size_t i=0; i<PIN_HAT.size(); i++) {
-        if(digitalRead(PIN_HAT[i]) == LOW) key_idx = i;
+        bool st = digitalRead(PIN_HAT[i]) == LOW;
+        if(st!=state[i] && !event_queue.full()) {
+            event_queue.push(etl::make_pair(i, st));
+            state[i] = st;
+        }
     }
-    if (key_idx!=-1) {
-        last_key = HAT_MAP[key_idx];
-        data->state = LV_INDEV_STATE_PRESSED;
-    }  else data->state = LV_INDEV_STATE_RELEASED;
-    data->key = last_key;
-    if(key_idx!=-1)
-        Serial.printf("%d, %d, %d\n", data->key, data->state, key_idx);
+
+    if(!event_queue.empty()) {
+        const auto p = event_queue.front();
+        data->key = HAT_MAP[p.first];
+        data->state = p.second ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        Serial.printf("%d (%d), %d\n", p.first, data->key, data->state);
+        event_queue.pop();
+    }
+
 }
 
 static uint32_t my_tick(void) {
     return millis();
 }
 
-void scr_load_cb(lv_event_t * e) {
-    lv_obj_t *t = lv_event_get_target_obj(e);
-    //if(t == scr_devices) {
-        found_devs.clear();
-        lv_obj_clean(list_devs);
-        lv_list_add_text(list_devs, "Receivers found:");
-        //lv_group_focus_obj(list_devs);
-
-    //     lv_obj_remove_flag(scr_devices, LV_OBJ_FLAG_HIDDEN);
-    //     lv_obj_add_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
-    // } else {
-    //     lv_obj_remove_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
-    //     lv_obj_add_flag(scr_devices, LV_OBJ_FLAG_HIDDEN);
-    // }
-}
 
 void fn_cb(lv_event_t *e) {
     lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
@@ -161,18 +183,27 @@ void setup () {
     lv_group_set_default(g);
     lv_indev_set_group(indev, g);
 
-    lb_battery = lv_label_create(lv_layer_top());
-    lv_obj_align(lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
+    statusbar = lv_layer_top();
+    lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
 
-    scr_devices = lv_obj_create(nullptr);
+    im_batt_intl = lv_image_create(statusbar); lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+    lb_batt_intl = lv_label_create(statusbar);
+    im_bt = lv_image_create(statusbar);  lv_image_set_src(im_bt, LV_SYMBOL_BLUETOOTH);
+    im_batt_rem = lv_image_create(statusbar); lv_image_set_src(lb_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
+    lb_batt_rem = lv_label_create(statusbar);
+
+    //lv_obj_align(lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
+
+    scr_devices = lv_screen_active();
     lv_obj_set_style_pad_top(scr_devices, 20, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
-    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+    // lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
 
     lv_obj_t * label;
 
     list_devs = lv_list_create(scr_devices);
     lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
+
 
     scr_control = lv_obj_create(nullptr);
     //lv_obj_add_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
@@ -180,35 +211,36 @@ void setup () {
     lv_obj_set_style_pad_bottom(scr_control, 5, LV_PART_MAIN);
     //lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
 
-    lv_screen_load(scr_devices);
-
-
     pnl_inputs = lv_label_create(scr_control);
     lv_obj_align(pnl_inputs, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t *bt_disconnect = lv_button_create(scr_control);
     lv_obj_add_event_cb(bt_disconnect, disconnect_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_align(bt_disconnect, LV_ALIGN_BOTTOM_LEFT, -4, -4);
-    label = lv_label_create(bt_disconnect); lv_label_set_text(label, "DISC");  lv_obj_center(label);
+    //label = lv_label_create(bt_disconnect); lv_label_set_text(label, "DISC");  lv_obj_center(label);
+    lv_image_set_src(lv_image_create(bt_disconnect), LV_SYMBOL_CLOSE);
 
-    lv_obj_t *bt1 = lv_button_create(scr_control);
-    lv_obj_add_flag(bt1, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(bt1, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(bt1); lv_label_set_text(label, "HDL"); lv_obj_center(label);
-    lv_obj_add_event_cb(bt1, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
-    bt_disconnect = bt1;
+    lv_obj_t *b = lv_button_create(scr_control);
+    bt_functions[0] = b;
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(b, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(b); lv_label_set_text(label, "HDL"); lv_obj_center(label);
+    lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
 
-    bt1 = lv_button_create(scr_control);
-    lv_obj_add_flag(bt1, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(bt1, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(bt1); lv_label_set_text(label, "MKR"); lv_obj_center(label);
-    lv_obj_add_event_cb(bt1, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
+    b = lv_button_create(scr_control);
+    bt_functions[1] = b;
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_align_to(b, bt_functions[0], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
+    label = lv_label_create(b); lv_label_set_text(label, "MKR"); lv_obj_center(label);
+    lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
     ble::set_battery_update_cb(on_battery_updated);
     ble::set_disconnected_cb(on_dev_disconnected);
-    ble::start_scan();
+    //ble::start_scan();
+
+    update_connected(false);
 
 }
 
@@ -252,7 +284,17 @@ int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_
 //     tft.drawWideLine(CX, CY, CX+x*R/512, CY-y*R/512, 2, down ? TFT_ORANGE : TFT_BLUE);
 // }
 
-void tick() {
+int read_tristate(int pin) {
+    pinMode(pin, INPUT_PULLUP);
+    int v1 = digitalRead(pin);
+    pinMode(pin, INPUT_PULLDOWN);
+    int v2 = digitalRead(pin);
+    // Serial.printf("v1=%d v2=%d\n", v1, v2);
+    if(v1==v2) return v1 == LOW ? -1 : 1;
+    return 0;
+}
+
+void read_controls_input() {
     int x = analogRead(PIN_JX);
     int y = analogRead(PIN_JY);
     bool down = digitalRead(PIN_J);
@@ -275,74 +317,42 @@ void tick() {
     }
     last_x = x;
     last_y = y;
+
+    bool st = digitalRead(PIN_SWITCHES[0]) == LOW;
+    lv_obj_set_state(bt_functions[0], LV_STATE_CHECKED, st);
+
+    int t = read_tristate(PIN_BLINKER);
+
 }
 
 void draw_batteries() {
     constexpr int ADC2 = 580, V2 = 4200,
         ADC1 = 428, V1 = 3200;
     int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
-    char msg[100]; size_t l=0;
+
+    int idx = map(int_batt, 3300, 4200, 0, 4);
+    idx = constrain(idx, 0, 4);
+    lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY - idx);
+    lv_label_set_text_fmt(lb_batt_intl, "%dmV ", int_batt);
+
     if(ble::is_connected()) {
-        l = snprintf(msg, sizeof(msg), "R:%d  ", remote_batt_value);
+        lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+        lv_label_set_text_fmt(lb_batt_rem, "%d", remote_batt_value);
     }
-    snprintf(msg+l, sizeof(msg)-l, "I:%.2fV ", int_batt/1000.0f);
-
-    lv_label_set_text(lb_battery, msg);
 }
 
-int read_tristate(int pin) {
-    pinMode(pin, INPUT_PULLUP);
-    int v1 = digitalRead(pin);
-    pinMode(pin, INPUT_PULLDOWN);
-    int v2 = digitalRead(pin);
-    // Serial.printf("v1=%d v2=%d\n", v1, v2);
-    if(v1==v2) return v1 == LOW ? -1 : 1;
-    return 0;
-}
-
-// void draw() {
-//     char msg[64];
-//     snprintf(msg, 64, "_ _ _ _ ");
-//     for(size_t i=0; i<PIN_SWITCHES.size(); i++) {
-//         if(digitalRead(PIN_SWITCHES[i]) == LOW) msg[i*2] = '+';
-//     }
-
-//     int t = read_tristate(PIN_BLINKER);
-//     msg[3*2] = t==-1 ? '-' : t==1 ? '+' : '_';
-//     tft.drawString(msg, 0, 10);
-
-//     snprintf(msg, 64, "_ _ _ _ _ _ ");
-//     for(size_t i=0; i<PIN_HAT.size(); i++) {
-//         if(digitalRead(PIN_HAT[i]) == LOW) msg[i*2] = '+';
-//     }
-//     if(digitalRead(PIN_J)==LOW) msg[5*2] = '+';
-//     tft.drawString(msg, 0, 40);
-// }
 
 void loop () {
-
-    // for(const auto &dev: *NimBLEDevice::getClientList()) {
-    //     if(!dev->isConnected()) continue;
-    //     Serial.printf("conn strength %d\n", dev->getRssi());
-    // }
-    // draw();
-    // delay(10);
-    // return;
 
     static size_t last_t = 0;
     static bool fn_lights = false;
     if(millis() - last_t > 1000) {
         last_t = millis();
-        // if(ble::is_connected()) {
-        //     ble::send(v ? "2=255\n": "2=0\n");
-        //     v = !v;
-        // }
-
         draw_batteries();
     }
 
     if(ble::is_connected()) {
-        tick();
+        read_controls_input();
     }
 
     lv_timer_handler();
