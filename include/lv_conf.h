@@ -76,7 +76,7 @@
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
-#define LV_DPI_DEF 100     /*[px/inch]*/
+#define LV_DPI_DEF   72     /*[px/inch]*/
 
 /*=================
  * OPERATING SYSTEM
@@ -189,7 +189,7 @@
  *-----------*/
 
 /*Enable the log module*/
-#define LV_USE_LOG 0
+#define LV_USE_LOG  0
 #if LV_USE_LOG
 
     /*How important log should be added:
@@ -199,7 +199,7 @@
     *LV_LOG_LEVEL_ERROR       Only critical issue, when the system may fail
     *LV_LOG_LEVEL_USER        Only logs added by the user
     *LV_LOG_LEVEL_NONE        Do not log anything*/
-    #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
+    #define LV_LOG_LEVEL  LV_LOG_LEVEL_WARN
 
     /*1: Print the log with 'printf';
     *0: User need to register a callback with `lv_log_register_print_cb()`*/
@@ -212,7 +212,7 @@
 
     /*1: Enable print timestamp;
      *0: Disable print timestamp*/
-    #define LV_LOG_USE_TIMESTAMP 1
+    #define LV_LOG_USE_TIMESTAMP   0
 
     /*1: Print file and line number of the log;
      *0: Do not print file and line number of the log*/
@@ -845,92 +845,10 @@
     #define LV_FILE_EXPLORER_QUICK_ACCESS        1
 #endif
 
-/*==================
- * DEVICES
- *==================*/
-
-/*Use SDL to open window on PC and handle mouse and keyboard*/
-#define LV_USE_SDL              0
-#if LV_USE_SDL
-    #define LV_SDL_INCLUDE_PATH     <SDL2/SDL.h>
-    #define LV_SDL_RENDER_MODE      LV_DISPLAY_RENDER_MODE_DIRECT   /*LV_DISPLAY_RENDER_MODE_DIRECT is recommended for best performance*/
-    #define LV_SDL_BUF_COUNT        1    /*1 or 2*/
-    #define LV_SDL_ACCELERATED      1    /*1: Use hardware acceleration*/
-    #define LV_SDL_FULLSCREEN       0    /*1: Make the window full screen by default*/
-    #define LV_SDL_DIRECT_EXIT      1    /*1: Exit the application when all SDL windows are closed*/
-    #define LV_SDL_MOUSEWHEEL_MODE  LV_SDL_MOUSEWHEEL_MODE_ENCODER  /*LV_SDL_MOUSEWHEEL_MODE_ENCODER/CROWN*/
-#endif
-
-/*Use X11 to open window on Linux desktop and handle mouse and keyboard*/
-#define LV_USE_X11              0
-#if LV_USE_X11
-    #define LV_X11_DIRECT_EXIT         1  /*Exit the application when all X11 windows have been closed*/
-    #define LV_X11_DOUBLE_BUFFER       1  /*Use double buffers for rendering*/
-    /*select only 1 of the following render modes (LV_X11_RENDER_MODE_PARTIAL preferred!)*/
-    #define LV_X11_RENDER_MODE_PARTIAL 1  /*Partial render mode (preferred)*/
-    #define LV_X11_RENDER_MODE_DIRECT  0  /*direct render mode*/
-    #define LV_X11_RENDER_MODE_FULL    0  /*Full render mode*/
-#endif
-
-/*Use Wayland to open a window and handle input on Linux or BSD desktops */
-#define LV_USE_WAYLAND          0
-#if LV_USE_WAYLAND
-    #define LV_WAYLAND_WINDOW_DECORATIONS   0    /*Draw client side window decorations only necessary on Mutter/GNOME*/
-    #define LV_WAYLAND_WL_SHELL             0    /*Use the legacy wl_shell protocol instead of the default XDG shell*/
-#endif
-
-/*Driver for /dev/fb*/
-#define LV_USE_LINUX_FBDEV      0
-#if LV_USE_LINUX_FBDEV
-    #define LV_LINUX_FBDEV_BSD           0
-    #define LV_LINUX_FBDEV_RENDER_MODE   LV_DISPLAY_RENDER_MODE_PARTIAL
-    #define LV_LINUX_FBDEV_BUFFER_COUNT  0
-    #define LV_LINUX_FBDEV_BUFFER_SIZE   60
-#endif
-
-/*Use Nuttx to open window and handle touchscreen*/
-#define LV_USE_NUTTX    0
-
-#if LV_USE_NUTTX
-    #define LV_USE_NUTTX_LIBUV    0
-
-    /*Use Nuttx custom init API to open window and handle touchscreen*/
-    #define LV_USE_NUTTX_CUSTOM_INIT    0
-
-    /*Driver for /dev/lcd*/
-    #define LV_USE_NUTTX_LCD      0
-    #if LV_USE_NUTTX_LCD
-        #define LV_NUTTX_LCD_BUFFER_COUNT    0
-        #define LV_NUTTX_LCD_BUFFER_SIZE     60
-    #endif
-
-    /*Driver for /dev/input*/
-    #define LV_USE_NUTTX_TOUCHSCREEN    0
-
-#endif
-
-/*Driver for /dev/dri/card*/
-#define LV_USE_LINUX_DRM        0
 
 /*Interface for TFT_eSPI*/
 #define LV_USE_TFT_ESPI         1
 
-/*Driver for evdev input devices*/
-#define LV_USE_EVDEV    0
-
-/*Driver for libinput input devices*/
-#define LV_USE_LIBINPUT    0
-
-#if LV_USE_LIBINPUT
-    #define LV_LIBINPUT_BSD    0
-
-    /*Full keyboard support*/
-    #define LV_LIBINPUT_XKB             0
-    #if LV_LIBINPUT_XKB
-        /*"setxkbmap -query" can help find the right values for your keyboard*/
-        #define LV_LIBINPUT_XKB_KEY_MAP { .rules = NULL, .model = "pc101", .layout = "us", .variant = NULL, .options = NULL }
-    #endif
-#endif
 
 /*Drivers for LCD devices connected via SPI/parallel port*/
 #define LV_USE_ST7735        0
@@ -940,80 +858,8 @@
 
 #define LV_USE_GENERIC_MIPI (LV_USE_ST7735 | LV_USE_ST7789 | LV_USE_ST7796 | LV_USE_ILI9341)
 
-/*Driver for Renesas GLCD*/
-#define LV_USE_RENESAS_GLCDC    0
-
-/* LVGL Windows backend */
-#define LV_USE_WINDOWS    0
-
-/* Use OpenGL to open window on PC and handle mouse and keyboard */
-#define LV_USE_OPENGLES   0
-#if LV_USE_OPENGLES
-    #define LV_USE_OPENGLES_DEBUG        1    /* Enable or disable debug for opengles */
-#endif
-
-/* QNX Screen display and input drivers */
-#define LV_USE_QNX              0
-#if LV_USE_QNX
-    #define LV_QNX_BUF_COUNT        1    /*1 or 2*/
-#endif
-
-/*==================
-* EXAMPLES
-*==================*/
-
-/*Enable the examples to be built with the library*/
-#define LV_BUILD_EXAMPLES 1
-
-/*===================
- * DEMO USAGE
- ====================*/
-
-/*Show some widget. It might be required to increase `LV_MEM_SIZE` */
-#define LV_USE_DEMO_WIDGETS 0
-
-/*Demonstrate the usage of encoder and keyboard*/
-#define LV_USE_DEMO_KEYPAD_AND_ENCODER 0
-
-/*Benchmark your system*/
-#define LV_USE_DEMO_BENCHMARK 0
-
-/*Render test for each primitives. Requires at least 480x272 display*/
-#define LV_USE_DEMO_RENDER 0
-
-/*Stress test for LVGL*/
-#define LV_USE_DEMO_STRESS 0
-
-/*Music player demo*/
-#define LV_USE_DEMO_MUSIC 0
-#if LV_USE_DEMO_MUSIC
-    #define LV_DEMO_MUSIC_SQUARE    0
-    #define LV_DEMO_MUSIC_LANDSCAPE 0
-    #define LV_DEMO_MUSIC_ROUND     0
-    #define LV_DEMO_MUSIC_LARGE     0
-    #define LV_DEMO_MUSIC_AUTO_PLAY 0
-#endif
-
-/*Flex layout demo*/
-#define LV_USE_DEMO_FLEX_LAYOUT     0
-
-/*Smart-phone like multi-language demo*/
-#define LV_USE_DEMO_MULTILANG       0
-
-/*Widget transformation demo*/
-#define LV_USE_DEMO_TRANSFORM       0
-
-/*Demonstrate scroll settings*/
-#define LV_USE_DEMO_SCROLL          0
-
-/*Vector graphic demo*/
-#define LV_USE_DEMO_VECTOR_GRAPHIC  0
 
 /*--END OF LV_CONF_H--*/
-
-
-//#define LV_USE_LOG    0
-//#define LV_LOG_LEVEL  LV_LOG_LEVEL_INFO
 
 #endif /*LV_CONF_H*/
 

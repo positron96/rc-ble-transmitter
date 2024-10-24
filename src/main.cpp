@@ -25,7 +25,9 @@ etl::vector<NimBLEAdvertisedDevice*, 5> found_devs;
 #define DRAW_BUF_SIZE (TFT_HOR_RES * TFT_VER_RES / 10 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 
-uint8_t rem_batt_val;
+uint8_t rem_batt_val = 0;
+
+static lv_indev_t * indev;
 
 static lv_obj_t *list_devs;
 static lv_obj_t *statusbar;
@@ -59,6 +61,18 @@ static void update_connected(bool c) {
         lv_screen_load(scr_devices);
     }
 }
+
+static void scr_load_cb(lv_event_t * e) {
+    lv_group_t* g = (lv_group_t*)lv_event_get_user_data(e);
+    lv_indev_set_group(indev, g);
+    lv_group_set_default(g);
+
+    Serial.printf("group cnt:%d, active: %X\n",
+        lv_group_get_obj_count(g),
+        lv_group_get_focused(g));
+
+}
+
 
 static void on_dev_selected(lv_event_t * e) {
     NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice*)lv_event_get_user_data(e);
@@ -138,6 +152,15 @@ void fn_cb(lv_event_t *e) {
     ble::send(msg);
 }
 
+#if LV_USE_LOG != 0
+void my_print( lv_log_level_t level, const char * buf )
+{
+    LV_UNUSED(level);
+    Serial.print(buf);
+    Serial.flush();
+}
+#endif
+
 
 void setup () {
     Serial.begin(115200);
@@ -152,99 +175,106 @@ void setup () {
     pinMode(PIN_J, INPUT);
 
     lv_init();
-
     lv_tick_set_cb(my_tick);
 
 #if LV_USE_LOG != 0
     lv_log_register_print_cb( my_print );
 #endif
 
-    lv_display_t * disp;
 #if LV_USE_TFT_ESPI
-    /*TFT_eSPI can be enabled lv_conf.h to initialize the display in a simple way*/
-    disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
+    lv_display_t * disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
     lv_display_set_rotation(disp, TFT_ROTATION);
 #else
     #error "TFT_eSPI nto set"
 #endif
 
-    lv_indev_t * indev = lv_indev_create();
+    indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER );
     lv_indev_set_read_cb(indev, inputdev_cb);
-    lv_group_t *g = lv_group_create();
-    lv_group_set_default(g);
-    lv_indev_set_group(indev, g);
+    // lv_indev_set_group(indev, g);
 
     statusbar = lv_layer_top();
     lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_text_color(statusbar, lv_color_hex(0x88888), LV_PART_MAIN);
+    lv_obj_set_style_pad_column(statusbar, 5, 0);
+    lv_obj_set_style_text_color(statusbar, lv_color_hex(0x888888), LV_PART_MAIN);
 
     im_batt_intl = lv_image_create(statusbar); lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+
     lb_batt_intl = lv_label_create(statusbar);
     im_bt = lv_image_create(statusbar);  lv_image_set_src(im_bt, LV_SYMBOL_BLUETOOTH);
     im_batt_rem = lv_image_create(statusbar); lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
     lb_batt_rem = lv_label_create(statusbar);
 
-    //lv_obj_align(lb_battery, LV_ALIGN_TOP_LEFT, 0, 0 );
+    lv_obj_delete(lv_screen_active());
 
-    scr_devices = lv_screen_active();
+    //####### devices screen
+
+    lv_group_t *g = lv_group_create();
+    lv_group_set_default(g);
+    scr_devices = lv_obj_create(nullptr);
+
     lv_obj_set_style_pad_top(scr_devices, 20, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
-    // lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    // lv_obj_set_user_data(scr_devices, g);
 
     lv_obj_t * label;
 
     list_devs = lv_list_create(scr_devices);
     lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
 
+    //####### control screen
 
+    g = lv_group_create();
+    lv_group_set_default(g);
     scr_control = lv_obj_create(nullptr);
-    //lv_obj_add_flag(scr_control, LV_OBJ_FLAG_HIDDEN);
+
     lv_obj_set_style_pad_top(scr_control, 20, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_control, 5, LV_PART_MAIN);
-    //lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+    lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    // lv_obj_set_user_data(scr_control, g);
 
-    pnl_inputs = lv_label_create(scr_control);
-    // pnl_inputs = lv_obj_create(scr_control);
-    // lv_obj_t *ball = lv_obj_create(pnl_inputs);
-    // lv_obj_set_pos(ball, lv_pct(50), lv_pct(50));
-    // lv_obj_set_size(ball, 10, 10);
-    // lv_obj_set_style_radius(ball , LV_RADIUS_CIRCLE, 0);
+    pnl_inputs = lv_obj_create(scr_control);
     lv_obj_align(pnl_inputs, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_set_size(pnl_inputs, 50, 50);
+    lv_obj_set_size(pnl_inputs, 100, 100);
+    lv_obj_set_scrollbar_mode(pnl_inputs, LV_SCROLLBAR_MODE_OFF);
 
-    lv_obj_t *bt_disconnect = lv_button_create(scr_control);
-    lv_obj_add_event_cb(bt_disconnect, disconnect_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_align(bt_disconnect, LV_ALIGN_BOTTOM_LEFT, -4, -4);
-    //label = lv_label_create(bt_disconnect); lv_label_set_text(label, "DISC");  lv_obj_center(label);
-    lv_image_set_src(lv_image_create(bt_disconnect), LV_SYMBOL_CLOSE);
+    lv_obj_t *ball = lv_obj_create(pnl_inputs);
+    // lv_obj_set_pos(ball, lv_pct(50), lv_pct(50));
+    lv_obj_align(ball, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_size(ball, 15, 15);
+    lv_obj_set_style_radius(ball , LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(ball, lv_palette_main(LV_PALETTE_CYAN), LV_PART_MAIN);
 
-    lv_obj_t *b = lv_button_create(scr_control);
-    bt_functions[0] = b;
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(b, bt_disconnect, LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, "H"); lv_obj_center(label);
+    lv_obj_t *l = lv_list_create(scr_control);
+    lv_obj_align(l, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_size(l, 130, lv_pct(100));
+
+    lv_obj_t *b = lv_list_add_button(l, LV_SYMBOL_CLOSE, "Disconnect");
+    lv_obj_add_event_cb(b, disconnect_cb, LV_EVENT_CLICKED, nullptr);
+
+    // lv_obj_add_style
+    // lv_style_set_pad_all(lv_style_get(b, , 0);
+
+    b = lv_list_add_button(l, nullptr, "Headlights");
     lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
-
-    b = lv_button_create(scr_control);
-    bt_functions[1] = b;
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(b, bt_functions[0], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, "M"); lv_obj_center(label);
+    bt_functions[0] = b;
+
+    b = lv_list_add_button(l, nullptr, "Marker");
     lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    bt_functions[1] = b;
 
-    b = lv_button_create(scr_control);
+    b = lv_list_add_button(l, nullptr, "<");
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
     bt_functions[2] = b;
+    b = lv_list_add_button(l, nullptr, ">");
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(b, bt_functions[1], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, "<"); lv_obj_center(label);
-    // lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-    b = lv_button_create(scr_control);
     bt_functions[3] = b;
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_align_to(b, bt_functions[2], LV_ALIGN_OUT_RIGHT_TOP, 0, 0);
-    label = lv_label_create(b); lv_label_set_text(label, ">"); lv_obj_center(label);
-    // lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_group_set_default(nullptr);
+
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
@@ -283,19 +313,6 @@ int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_
     }
 }
 
-// static void on_input_panel_evt(lv_event_t * e) {
-//     lv_obj_t *obj = (lv_obj_t*)lv_event_get_target(e);
-//     lv_layer_t * layer = lv_event_get_layer(e);
-//     lv_draw_arc(layer, arc);
-//     tft.fillRect(0, 20, tft.width(), 16, TFT_BLACK);
-
-//     constexpr int CX = 65, CY=120, R=50;
-
-//     tft.fillCircle(CX, CY, R, TFT_DARKGREEN);
-//     tft.drawString(String("")+x+"/"+y, CX-25, CY-5);
-//     tft.drawWideLine(CX, CY, CX+x*R/512, CY-y*R/512, 2, down ? TFT_ORANGE : TFT_BLUE);
-// }
-
 int read_tristate(int pin) {
     pinMode(pin, INPUT_PULLUP);
     int v1 = digitalRead(pin);
@@ -330,9 +347,15 @@ void read_controls_input() {
         );
         ble::send(msg);
 
-        lv_label_set_text(pnl_inputs, msg);
-        //lv_obj_t *ball = lv_obj_get_child(pnl_inputs, 0);
-        //lv_obj_set_pos(ball, lv_pct(50 + x*50/512), lv_pct(50 + x*50/512));
+        // lv_label_set_text(pnl_inputs, msg);
+        lv_obj_t *ball = lv_obj_get_child(pnl_inputs, 0);
+        lv_obj_set_pos(ball, x*50/512, - y*50/512);
+
+        // snprintf(msg, sizeof(msg), "%d/%d",
+        //     50 + x*50/512,
+        //     50 - y*50/512
+        // );
+        // lv_label_set_text(lb_batt_rem, msg);
     }
     last_x = x;
     last_y = y;
@@ -370,7 +393,7 @@ void draw_batteries() {
     }
 
     if(ble::is_connected()) {
-        static int last_rem_batt;
+        static int last_rem_batt=-1;
         if(last_rem_batt != rem_batt_val) {
             lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
             lv_label_set_text_fmt(lb_batt_rem, "%d", rem_batt_val);
