@@ -76,7 +76,7 @@
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
-#define LV_DPI_DEF   72     /*[px/inch]*/
+#define LV_DPI_DEF   100     /*[px/inch]*/
 
 /*=================
  * OPERATING SYSTEM

@@ -67,9 +67,9 @@ static void scr_load_cb(lv_event_t * e) {
     lv_indev_set_group(indev, g);
     lv_group_set_default(g);
 
-    Serial.printf("group cnt:%d, active: %X\n",
-        lv_group_get_obj_count(g),
-        lv_group_get_focused(g));
+    // Serial.printf("group cnt:%d, active: %X\n",
+    //     lv_group_get_obj_count(g),
+    //     lv_group_get_focused(g));
 
 }
 
@@ -189,7 +189,7 @@ void setup () {
 #endif
 
     indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER );
+    lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER);
     lv_indev_set_read_cb(indev, inputdev_cb);
     // lv_indev_set_group(indev, g);
 
@@ -213,8 +213,10 @@ void setup () {
     lv_group_set_default(g);
     scr_devices = lv_obj_create(nullptr);
 
-    lv_obj_set_style_pad_top(scr_devices, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(scr_devices, 18, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(scr_devices, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(scr_devices, 5, LV_PART_MAIN);
     lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
     // lv_obj_set_user_data(scr_devices, g);
 
@@ -229,8 +231,10 @@ void setup () {
     lv_group_set_default(g);
     scr_control = lv_obj_create(nullptr);
 
-    lv_obj_set_style_pad_top(scr_control, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(scr_control, 18, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_control, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(scr_control, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(scr_control, 5, LV_PART_MAIN);
     lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
     // lv_obj_set_user_data(scr_control, g);
 
@@ -246,35 +250,45 @@ void setup () {
     lv_obj_set_style_radius(ball , LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(ball, lv_palette_main(LV_PALETTE_CYAN), LV_PART_MAIN);
 
-    lv_obj_t *l = lv_list_create(scr_control);
+    lv_obj_t *l = lv_obj_create(scr_control);
     lv_obj_align(l, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_size(l, 130, lv_pct(100));
+    lv_obj_set_flex_flow(l, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_size(l, 125, lv_pct(100));
+    lv_obj_set_style_pad_top(l, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(l, 5, LV_PART_MAIN);
 
-    lv_obj_t *b = lv_list_add_button(l, LV_SYMBOL_CLOSE, "Disconnect");
-    lv_obj_add_event_cb(b, disconnect_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t *b;
 
-    // lv_obj_add_style
-    // lv_style_set_pad_all(lv_style_get(b, , 0);
-
-    b = lv_list_add_button(l, nullptr, "Headlights");
-    lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)2);
+    b = lv_button_create(l);
+    lv_label_set_text(lv_label_create(b), "Headlight");
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_user_data(b, (int*)2);
     bt_functions[0] = b;
 
-    b = lv_list_add_button(l, nullptr, "Marker");
-    lv_obj_add_event_cb(b, fn_cb, LV_EVENT_VALUE_CHANGED, (int*)3);
+    b = lv_button_create(l);
+    lv_label_set_text(lv_label_create(b), "Marker");
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_user_data(b, (int*)3);
     bt_functions[1] = b;
 
-    b = lv_list_add_button(l, nullptr, "<");
+    b = lv_button_create(l);
+    lv_label_set_text(lv_label_create(b), "<");
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
     bt_functions[2] = b;
-    b = lv_list_add_button(l, nullptr, ">");
+    b = lv_button_create(l);
+    lv_label_set_text(lv_label_create(b), ">");
+    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
     bt_functions[3] = b;
 
-    lv_group_set_default(nullptr);
+    b = lv_button_create(l);
+    lv_image_set_src(lv_image_create(b), LV_SYMBOL_CLOSE);
+    lv_obj_add_event_cb(b, disconnect_cb, LV_EVENT_CLICKED, nullptr);
 
+    lv_group_set_default(nullptr);
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
@@ -327,7 +341,15 @@ void set_checked_state(lv_obj_t *bt, bool checked) {
     bool cur = lv_obj_has_state(bt, LV_STATE_CHECKED);
     if(cur!=checked) {
         lv_obj_set_state(bt, LV_STATE_CHECKED, checked);
-        lv_obj_send_event(bt, LV_EVENT_VALUE_CHANGED, nullptr);
+
+        int fn = (int)lv_obj_get_user_data(bt);
+        if(fn!=0) {
+            char msg[32];
+            snprintf(msg, sizeof(msg), "%d=%d\n", fn, checked?255:0);
+            ble::send(msg);
+        }
+
+        //lv_obj_send_event(bt, LV_EVENT_VALUE_CHANGED, nullptr);
     }
 }
 
@@ -362,6 +384,9 @@ void read_controls_input() {
 
     bool st = digitalRead(PIN_SWITCHES[1]) == LOW;
     set_checked_state(bt_functions[0], st);
+
+    st = digitalRead(PIN_SWITCHES[2]) == LOW;
+    set_checked_state(bt_functions[1], st);
 
     int t = read_tristate(PIN_BLINKER);
     if(t>0) {
