@@ -161,14 +161,15 @@ void my_print( lv_log_level_t level, const char * buf )
 }
 #endif
 
+//#define VBAT  10
 
 void setup () {
     Serial.begin(115200);
     Serial.println("Starting NimBLE Client");
 
     analogReadResolution(10);
-    pinMode(LEFT_BUTTON, INPUT_PULLUP);
-    pinMode(RIGHT_BUTTON, INPUT_PULLUP);
+    // pinMode(LEFT_BUTTON, INPUT_PULLUP);
+    // pinMode(RIGHT_BUTTON, INPUT_PULLUP);
 
     for(auto p: PIN_HAT) pinMode(p, INPUT);
     for(auto p: PIN_SWITCHES) pinMode(p, INPUT_PULLUP);
