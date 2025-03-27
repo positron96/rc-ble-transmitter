@@ -47,10 +47,12 @@ static etl::array<lv_obj_t*, 4> bt_functions;
 
 static void update_connected(bool c) {
     if(c) {
+        found_devs.clear();
         lv_obj_remove_flag(im_bt, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(lb_batt_rem, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(im_batt_rem, LV_OBJ_FLAG_HIDDEN);
-        lv_screen_load(scr_control);
+        //lv_screen_load(scr_control);
+        lv_screen_load_anim(scr_devices, LV_SCR_LOAD_ANIM_MOVE_LEFT, 500, 0, false);
     } else {
         ble::start_scan();
         lv_obj_add_flag(im_bt, LV_OBJ_FLAG_HIDDEN);
@@ -60,7 +62,8 @@ static void update_connected(bool c) {
         lv_obj_clean(list_devs);
         lv_list_add_text(list_devs, "Receivers found:");
 
-        lv_screen_load(scr_devices);
+        //lv_screen_load(scr_devices);
+        lv_screen_load_anim(scr_devices, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 500, 0, false);
     }
 }
 
@@ -89,14 +92,18 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
 
     found_devs.push_back(dev);
 
-    char msg[50];
-    size_t l = snprintf(
-        msg,
-        sizeof(msg),
-        "%s (%s)",
-        dev->getName().c_str(),
-        dev->getAddress().toString().c_str());
-    lv_obj_t *btn = lv_list_add_button(list_devs, nullptr, msg);
+    const char* name = dev->getName().c_str();
+    lv_obj_t *btn;
+    if(strcmp(name, "MicroRC") == 0) {
+        char msg[50];
+        snprintf(msg, sizeof(msg), "%s (%s)",
+            name,
+            dev->getAddress().toString().c_str()
+        );
+        btn = lv_list_add_button(list_devs, nullptr, msg);
+    } else {
+        btn = lv_list_add_button(list_devs, nullptr, name);
+    }
     lv_obj_add_event_cb(btn, on_dev_selected, LV_EVENT_CLICKED, dev);
 }
 
@@ -111,7 +118,7 @@ void on_dev_disconnected(NimBLEClient *dev) {
     update_connected(false);
 }
 
-void disconnect_cb(lv_event_t * e) {
+void disconnect_request_cb(lv_event_t * e) {
     ble::disconnect();
 }
 
@@ -167,7 +174,7 @@ void my_print( lv_log_level_t level, const char * buf )
 
 void setup () {
     Serial.begin(115200);
-    Serial.println("Starting NimBLE Client");
+    Serial.println("Starting BLE Transmitter");
 
     analogReadResolution(10);
     // pinMode(LEFT_BUTTON, INPUT_PULLUP);
@@ -178,7 +185,7 @@ void setup () {
     pinMode(PIN_J, INPUT);
 
     lv_init();
-    lv_tick_set_cb(my_tick);
+    lv_tick_set_cb(my_tick); // millis
 
 #if LV_USE_LOG != 0
     lv_log_register_print_cb( my_print );
@@ -208,13 +215,13 @@ void setup () {
     im_batt_rem = lv_image_create(statusbar); lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
     lb_batt_rem = lv_label_create(statusbar);
 
-    lv_obj_delete(lv_screen_active());
+    //lv_obj_delete(lv_screen_active());
 
     //####### devices screen
 
     lv_group_t *g = lv_group_create();
     lv_group_set_default(g);
-    scr_devices = lv_obj_create(nullptr);
+    scr_devices = lv_screen_active();//lv_obj_create(nullptr);
 
     lv_obj_set_style_pad_top(scr_devices, 18, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
@@ -300,8 +307,6 @@ void setup () {
     ble::set_dev_found_cb(on_dev_found);
     ble::set_battery_update_cb(on_battery_updated);
     ble::set_disconnected_cb(on_dev_disconnected);
-    //ble::start_scan();
-
     update_connected(false);
 
 }
@@ -333,6 +338,8 @@ int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_
     }
 }
 
+
+/** Returns -1, 0, 1 if pin is LOW, floating and HIGH. */
 int read_tristate(int pin) {
     pinMode(pin, INPUT_PULLUP);
     int v1 = digitalRead(pin);
@@ -369,9 +376,12 @@ void read_controls_input() {
     static int last_x=-1000, last_y=0;
     if(x!=last_x || y!=last_y) {
         char msg[32];
+        int sx = 128 + x*128/512, sy = 128 + y*128/512;
+        sx = constrain(sx, 0, 255);
+        sy = constrain(sy, 0, 255);
         snprintf(msg, sizeof(msg), "1=%d\n0=%d\n",
-            128 + x*128/512,
-            128 + y*128/512
+            sx,
+            sy
         );
         ble::send(msg);
 
@@ -410,24 +420,26 @@ void draw_batteries() {
         ADC1 = 428, V1 = 3200;
     int int_batt = map(analogRead(VBAT), ADC1, ADC2, V1, V2);
 
-    int idx = map(int_batt, 3300, 4000, 0, 4);
-    idx = constrain(idx, 0, 4);
-
     char glyph[] = {'\xEF', '\x89', '\x84', 0};
 
     static int last_int_batt;
-    if(last_int_batt!=int_batt/100) {
+    if(last_int_batt != int_batt/100) {
+        int idx = map(int_batt, 3300, 4000, 0, 4);
+        idx = constrain(idx, 0, 4);
         glyph[2] = '\x84' - idx;
         lv_image_set_src(im_batt_intl, glyph);
         lv_label_set_text_fmt(lb_batt_intl, "%dmV ", int_batt);
         last_int_batt = int_batt/100;
     }
 
+    static int last_rem_batt=-1;
     if(ble::is_connected()) {
-        static int last_rem_batt=-1;
         if(last_rem_batt != rem_batt_val) {
-            lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
-            lv_label_set_text_fmt(lb_batt_rem, "%d", rem_batt_val);
+            int idx = map(rem_batt_val, 0, 100, 0, 4);
+            idx = constrain(idx, 0, 4);
+            glyph[2] = '\x84' - idx;
+            lv_image_set_src(im_batt_rem, glyph);
+            lv_label_set_text_fmt(lb_batt_rem, "%d%%", rem_batt_val);
             last_rem_batt = rem_batt_val;
         }
     }
