@@ -15,6 +15,7 @@
 #include <etl/queue.h>
 #include <etl/utility.h>
 
+#include "device_settings.hpp"
 #include "ble.h"
 
 etl::vector<NimBLEAdvertisedDevice*, 5> found_devs;
@@ -41,6 +42,7 @@ static lv_obj_t *pnl_inputs;
 
 static lv_obj_t *scr_devices;
 static lv_obj_t *scr_control;
+static lv_obj_t *scr_dev_settings;
 static etl::array<lv_obj_t*, 4> bt_functions;
 
 static void update_connected(bool c) {
@@ -287,7 +289,10 @@ void setup () {
 
     b = lv_button_create(l);
     lv_image_set_src(lv_image_create(b), LV_SYMBOL_CLOSE);
-    lv_obj_add_event_cb(b, disconnect_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(b, disconnect_request_cb, LV_EVENT_CLICKED, nullptr);
+
+    //###### Device settings
+    scr_dev_settings = dev_settings::init();
 
     lv_group_set_default(nullptr);
 
