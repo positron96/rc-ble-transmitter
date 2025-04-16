@@ -3,6 +3,9 @@
         "array": "cpp",
         "string": "cpp",
         "string_view": "cpp",
-        "type_traits": "cpp"
+        "type_traits": "cpp",
+        "lv_init.h": "c",
+        "lv_demo_keypad_encoder.h": "c",
+        "lv_demos.h": "c"
     }
 }

@@ -86,7 +86,7 @@ namespace ble {
         bool onConfirmPIN(uint32_t pass_key){
             Serial.print("The passkey YES/NO number: ");
             Serial.println(pass_key);
-        /** Return false if passkeys don't match. */
+            /** Return false if passkeys don't match. */
             return true;
         };
 
