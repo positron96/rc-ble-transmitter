@@ -50,7 +50,6 @@ struct dev_settings {
         //lv_keyboard_set_textarea(kb, ta1);
 
         lv_obj_t *b;
-        lv_obj_t * lbl;
 
         b = lv_button_create(scr);
         lbl = lv_label_create(b);
@@ -76,5 +75,7 @@ struct dev_settings {
 
 
 };
+
+lv_obj_t *dev_settings::scr;
 
 #endif // DEVICE_SETTINGS_HPP_
