@@ -30,6 +30,8 @@ namespace ble {
     static NimBLERemoteCharacteristic* char_tx = nullptr;
     static NimBLEClient *client;
 
+    static std::string dev_name;
+
     constexpr uint32_t scan_duration = 0; /** 0 = scan forever */
 
     class ClientCallbacks : public NimBLEClientCallbacks {
@@ -51,6 +53,7 @@ namespace ble {
             }
             char_tx = nullptr;
             client = nullptr;
+            dev_name = "";
         };
 
         /** Called when the peripheral requests a change to the connection parameters.
@@ -158,12 +161,17 @@ namespace ble {
         update_battery_value(pData[0]);
     }
 
+    const std::string &get_connected_dev_name() {
+        return dev_name;
+    }
 
     bool connect(NimBLEAdvertisedDevice* advDevice) {
 
         stop_scan();
 
         NimBLEClient* pClient = nullptr;
+
+        dev_name = advDevice->getName();
 
         if(NimBLEDevice::getClientListSize() != 0) {
             pClient = NimBLEDevice::getClientByPeerAddress(advDevice->getAddress());

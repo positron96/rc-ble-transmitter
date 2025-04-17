@@ -62,6 +62,11 @@ static void update_connected(bool c) {
         lv_obj_clean(list_devs);
         lv_list_add_text(list_devs, "Receivers found:");
 
+        if (lv_screen_active() == scr_devices) {
+            // need to set indev and group even if it's already shown
+            lv_obj_send_event(scr_devices, LV_EVENT_SCREEN_LOADED, nullptr);
+        }
+
         //lv_screen_load(scr_devices);
         lv_screen_load_anim(scr_devices, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
     }
@@ -181,57 +186,14 @@ void my_print( lv_log_level_t level, const char * buf )
 
 //#define VBAT  10
 
-void setup () {
-    Serial.begin(115200);
-    Serial.println("Starting BLE Transmitter");
-
-    analogReadResolution(10);
-    // pinMode(LEFT_BUTTON, INPUT_PULLUP);
-    // pinMode(RIGHT_BUTTON, INPUT_PULLUP);
-
-    for(auto p: PIN_HAT) pinMode(p, INPUT);
-    for(auto p: PIN_SWITCHES) pinMode(p, INPUT_PULLUP);
-    pinMode(PIN_J, INPUT);
-
-    lv_init();
-    lv_tick_set_cb(my_tick); // millis
-
-#if LV_USE_LOG != 0
-    lv_log_register_print_cb( my_print );
-#endif
-
-#if LV_USE_TFT_ESPI
-    lv_display_t * disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
-    lv_display_set_rotation(disp, TFT_ROTATION);
-#else
-    #error "TFT_eSPI nto set"
-#endif
-
-    indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER);
-    lv_indev_set_read_cb(indev, inputdev_cb);
-
-    statusbar = lv_layer_top();
-    lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(statusbar, 5, 0);
-    lv_obj_set_style_text_color(statusbar, lv_color_hex(0x888888), LV_PART_MAIN);
-
-    im_batt_intl = lv_image_create(statusbar); lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
-
-    lb_batt_intl = lv_label_create(statusbar);
-    im_bt = lv_image_create(statusbar);  lv_image_set_src(im_bt, LV_SYMBOL_BLUETOOTH);
-    im_batt_rem = lv_image_create(statusbar); lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
-    lb_batt_rem = lv_label_create(statusbar);
-
-    //####### devices screen
-
-    lv_group_t *g = lv_group_create(); // Serial.printf("group devices %X\n", (intptr_t)g);
+void create_devices_screen() {
+    lv_group_t *g = lv_group_create();
     lv_group_set_default(g);
     scr_devices = lv_screen_active();
 
     lv_indev_set_group(indev, g);
 
-    lv_obj_set_style_pad_top(scr_devices, 18, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(scr_devices, lv_obj_get_height(statusbar)+3, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
     lv_obj_set_style_pad_left(scr_devices, 5, LV_PART_MAIN);
     lv_obj_set_style_pad_right(scr_devices, 5, LV_PART_MAIN);
@@ -241,10 +203,10 @@ void setup () {
 
     list_devs = lv_list_create(scr_devices);
     lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
+}
 
-    //####### control screen
-
-    g = lv_group_create(); //Serial.printf("group control %X\n", (intptr_t)g);
+void create_control_screen() {
+    lv_group_t *g = lv_group_create();
     lv_group_set_default(g);
     scr_control = lv_obj_create(nullptr);
 
@@ -311,11 +273,62 @@ void setup () {
     b = lv_button_create(l);
     lv_image_set_src(lv_image_create(b), LV_SYMBOL_CLOSE);
     lv_obj_add_event_cb(b, disconnect_request_cb, LV_EVENT_CLICKED, nullptr);
+}
+
+void setup () {
+    Serial.begin(115200);
+    Serial.println("Starting BLE Transmitter");
+
+    analogReadResolution(10);
+    // pinMode(LEFT_BUTTON, INPUT_PULLUP);
+    // pinMode(RIGHT_BUTTON, INPUT_PULLUP);
+
+    for(auto p: PIN_HAT) pinMode(p, INPUT);
+    for(auto p: PIN_SWITCHES) pinMode(p, INPUT_PULLUP);
+    pinMode(PIN_J, INPUT);
+
+    lv_init();
+    lv_tick_set_cb(my_tick); // millis
+
+#if LV_USE_LOG != 0
+    lv_log_register_print_cb( my_print );
+#endif
+
+#if LV_USE_TFT_ESPI
+    lv_display_t * disp = lv_tft_espi_create(TFT_HOR_RES, TFT_VER_RES, draw_buf, sizeof(draw_buf));
+    lv_display_set_rotation(disp, TFT_ROTATION);
+#else
+    #error "TFT_eSPI nto set"
+#endif
+
+    indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_ENCODER);
+    lv_indev_set_read_cb(indev, inputdev_cb);
+
+    statusbar = lv_layer_top();
+    lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(statusbar, 5, 0);
+    lv_obj_set_style_text_color(statusbar, lv_color_hex(0x888888), LV_PART_MAIN);
+
+    im_batt_intl = lv_image_create(statusbar); lv_image_set_src(im_batt_intl, LV_SYMBOL_BATTERY_EMPTY);
+
+    lb_batt_intl = lv_label_create(statusbar);
+    im_bt = lv_image_create(statusbar);  lv_image_set_src(im_bt, LV_SYMBOL_BLUETOOTH);
+    im_batt_rem = lv_image_create(statusbar); lv_image_set_src(im_batt_rem, LV_SYMBOL_BATTERY_EMPTY);
+    lb_batt_rem = lv_label_create(statusbar);
+
+    //####### devices screen
+
+    create_devices_screen();
+
+    //####### control screen
+    create_control_screen();
 
     //###### Device settings
     scr_dev_settings = dev_settings::init();
+    lv_obj_add_event_cb(scr_dev_settings, scr_load_cb, LV_EVENT_SCREEN_LOADED, lv_group_get_default());
 
-    lv_group_set_default(lv_indev_get_group(indev));
+    // lv_group_set_default(lv_indev_get_group(indev));
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);

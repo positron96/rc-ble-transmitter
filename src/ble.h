@@ -23,6 +23,8 @@ namespace ble {
     void disconnect();
     bool is_connected();
 
+    const std::string & get_connected_dev_name();
+
     bool send(const char* msg);
 
     void set_battery_update_cb(battery_callback_t);
