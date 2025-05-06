@@ -80,7 +80,6 @@ static void scr_load_cb(lv_event_t * e) {
     // Serial.printf("group cnt:%d, active: %X\n",
     //     lv_group_get_obj_count(g),
     //     lv_group_get_focused(g));
-
 }
 
 
@@ -94,7 +93,7 @@ static void on_dev_selected(lv_event_t * e) {
 }
 
 void on_dev_found(NimBLEAdvertisedDevice *dev) {
-    //Serial.printf("found: %s (%s)\n",  dev->getName().c_str(), dev->getAddress().toString().c_str());
+    // Serial.printf("found: %s (%s)\n",  dev->getName().c_str(), dev->getAddress().toString().c_str());
 
     if(found_devs.full()) return;
 
@@ -102,16 +101,16 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
 
     const char* name = dev->getName().c_str();
     lv_obj_t *btn;
+    char msg[50];
     if(strcmp(name, "MicroRC") == 0) {
-        char msg[50];
         snprintf(msg, sizeof(msg), "%s (%s)",
             name,
             dev->getAddress().toString().c_str()
         );
-        btn = lv_list_add_button(list_devs, nullptr, msg);
     } else {
-        btn = lv_list_add_button(list_devs, nullptr, name);
+        snprintf(msg, sizeof(msg), "%s", name);
     }
+    btn = lv_list_add_button(list_devs, nullptr, msg);
     lv_obj_add_event_cb(btn, on_dev_selected, LV_EVENT_CLICKED, dev);
 }
 
@@ -186,38 +185,28 @@ void my_print( lv_log_level_t level, const char * buf )
 
 //#define VBAT  10
 
-void create_devices_screen() {
-    lv_group_t *g = lv_group_create();
-    lv_group_set_default(g);
-    scr_devices = lv_screen_active();
+constexpr uint top_pad = 18;
 
-    lv_indev_set_group(indev, g);
+void set_screen_padding(lv_obj_t *scr) {
+    lv_obj_set_style_pad_top(scr, top_pad, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(scr, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(scr, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(scr, 5, LV_PART_MAIN);
 
-    lv_obj_set_style_pad_top(scr_devices, lv_obj_get_height(statusbar)+3, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(scr_devices, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(scr_devices, 5, LV_PART_MAIN);
-    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    lv_obj_set_size(scr, lv_pct(100), lv_pct(100));
+}
 
-    lv_obj_t * label;
+void create_devices_screen(lv_obj_t *scr) {
+    set_screen_padding(scr);
 
-    list_devs = lv_list_create(scr_devices);
+    list_devs = lv_list_create(scr);
     lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
 }
 
-void create_control_screen() {
-    lv_group_t *g = lv_group_create();
-    lv_group_set_default(g);
-    scr_control = lv_obj_create(nullptr);
+void create_control_screen(lv_obj_t *scr) {
+    set_screen_padding(scr);
 
-    lv_obj_set_style_pad_top(scr_control, 18, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(scr_control, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(scr_control, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(scr_control, 5, LV_PART_MAIN);
-    lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
-    // lv_obj_set_user_data(scr_control, g);
-
-    pnl_inputs = lv_obj_create(scr_control);
+    pnl_inputs = lv_obj_create(scr);
     lv_obj_align(pnl_inputs, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_size(pnl_inputs, 100, 100);
     lv_obj_set_scrollbar_mode(pnl_inputs, LV_SCROLLBAR_MODE_OFF);
@@ -229,7 +218,7 @@ void create_control_screen() {
     lv_obj_set_style_radius(ball , LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(ball, lv_palette_main(LV_PALETTE_CYAN), LV_PART_MAIN);
 
-    lv_obj_t *l = lv_obj_create(scr_control);
+    lv_obj_t *l = lv_obj_create(scr);
     lv_obj_align(l, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_flex_flow(l, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_size(l, 125, lv_pct(100));
@@ -318,15 +307,28 @@ void setup () {
     lb_batt_rem = lv_label_create(statusbar);
 
     //####### devices screen
-
-    create_devices_screen();
+    lv_group_t *g = lv_group_create();
+    lv_group_set_default(g);
+    scr_devices = lv_screen_active();
+    create_devices_screen(scr_devices);
+    lv_list_add_text(list_devs, "PREVED");
+    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
 
     //####### control screen
-    create_control_screen();
+    g = lv_group_create();
+    lv_group_set_default(g);
+    scr_control = lv_obj_create(nullptr);
+    create_control_screen(scr_control);
+    lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
 
     //###### Device settings
-    scr_dev_settings = dev_settings::init();
-    lv_obj_add_event_cb(scr_dev_settings, scr_load_cb, LV_EVENT_SCREEN_LOADED, lv_group_get_default());
+    scr_dev_settings = lv_obj_create(nullptr);
+    set_screen_padding(scr_dev_settings);
+    g = lv_group_create();
+    lv_group_set_default(g);
+    dev_settings::create_ui(scr_dev_settings);
+    lv_obj_add_event_cb(scr_dev_settings, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    dev_settings::screen_back = scr_control;
 
     // lv_group_set_default(lv_indev_get_group(indev));
 

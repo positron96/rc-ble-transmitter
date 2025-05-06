@@ -15,33 +15,23 @@ struct dev_settings {
 
     static lv_obj_t *scr;
 
+    static lv_obj_t* create_ui(lv_obj_t *_scr) {
+        scr = _scr;
+        lv_obj_add_event_cb(_scr, scr_load_cb, LV_EVENT_SCREEN_LOADED, nullptr);
 
-
-    static lv_obj_t* init() {
-        lv_group_t *g = lv_group_create();
-        lv_group_set_default(g);
-
-        scr = lv_obj_create(nullptr);
-        lv_obj_set_layout(scr, LV_FLEX_FLOW_ROW_WRAP);
-
-        lv_obj_set_style_pad_top(scr, lv_obj_get_height(lv_layer_top())+3, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(scr_devices, 5, LV_PART_MAIN);
-        lv_obj_set_style_pad_left(scr_devices, 5, LV_PART_MAIN);
-        lv_obj_set_style_pad_right(scr_devices, 5, LV_PART_MAIN);
-
-        lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, nullptr);
+        lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
 
         lv_obj_t * lbl;
         lbl = lv_label_create(scr);
         lv_label_set_text(lbl, "Device name");
 
-        lv_obj_t * kb = lv_keyboard_create(scr);
-        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-
         ta_devname = lv_textarea_create(scr);
-        lv_obj_add_event_cb(ta_devname, ta_event_cb, LV_EVENT_ALL, kb);
         lv_textarea_set_one_line(ta_devname, true);
         // lv_obj_set_size(ta_devname, 140, 80);
+
+        lv_obj_t * kb = lv_keyboard_create(scr);
+        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_event_cb(ta_devname, ta_event_cb, LV_EVENT_ALL, kb);
 
         lv_obj_t *b;
 
@@ -77,8 +67,7 @@ struct dev_settings {
         lv_obj_t *ta = (lv_obj_t*)lv_event_get_target(e);
         lv_event_code_t code = lv_event_get_code(e);
 
-        // Serial.printf("Textarea event %X, text='%s'\n",
-        //     code,  lv_textarea_get_text(ta));
+         Serial.printf("Textarea event %X\n", code);
 
         lv_indev_t * indev = lv_indev_active();
         if(indev == NULL) return;
