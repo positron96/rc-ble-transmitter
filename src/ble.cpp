@@ -44,7 +44,10 @@ namespace ble {
              *  I find a multiple of 3-5 * the interval works best for quick response/reconnect.
              *  Min interval: 120 * 1.25ms = 150, Max interval: 120 * 1.25ms = 150, 0 latency, 60 * 10ms = 600ms timeout
              */
-            pClient->updateConnParams(120,120,0,60);
+            pClient->updateConnParams(
+                BLE_GAP_CONN_ITVL_MS(50), BLE_GAP_CONN_ITVL_MS(50),
+                0,
+                BLE_GAP_SUPERVISION_TIMEOUT_MS(600));
         };
 
         void onDisconnect(NimBLEClient* pClient) {
@@ -61,19 +64,21 @@ namespace ble {
          *  the currently used parameters. Default will return true.
          */
         bool onConnParamsUpdateRequest(NimBLEClient* pClient, const ble_gap_upd_params* params) {
-            // Serial.printf("conn update: conn:%d-%d, lat:%d; sup:%d\n",
-            //     params->itvl_min, params->itvl_max,
-            //     params->latency,
-            //     params->supervision_timeout);
-            if(params->itvl_min < BLE_GAP_CONN_ITVL_MS(10)) { /** 1.25ms units */
+            Serial.printf("conn update: conn:%d-%d, lat:%d; sup:%d\n",
+                params->itvl_min, params->itvl_max,
+                params->latency,
+                params->supervision_timeout);
+            if(params->itvl_min < BLE_GAP_CONN_ITVL_MS(10)) {
                 return false;
-            } else if(params->itvl_max > BLE_GAP_CONN_ITVL_MS(100)) { /** 1.25ms units */
+            } else if(params->itvl_max > BLE_GAP_CONN_ITVL_MS(100)) {
                 return false;
             } else if(params->latency > 5) { /** Number of intervals allowed to skip */
                 return false;
-            } else if(params->supervision_timeout > BLE_GAP_SUPERVISION_TIMEOUT_MS(15000)) { /** 10ms units */
+            } else if(params->supervision_timeout > BLE_GAP_SUPERVISION_TIMEOUT_MS(15000)) {
                 return false;
             }
+
+            Serial.println(" conn update valid");
 
             return true;
         };
