@@ -62,11 +62,6 @@ static void update_connected(bool c) {
         lv_obj_clean(list_devs);
         lv_list_add_text(list_devs, "Receivers found:");
 
-        if (lv_screen_active() == scr_devices) {
-            // need to set indev and group even if it's already shown
-            lv_obj_send_event(scr_devices, LV_EVENT_SCREEN_LOADED, nullptr);
-        }
-
         //lv_screen_load(scr_devices);
         lv_screen_load_anim(scr_devices, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
     }
@@ -96,22 +91,7 @@ void on_dev_found(NimBLEAdvertisedDevice *dev) {
     // Serial.printf("found: %s (%s)\n",  dev->getName().c_str(), dev->getAddress().toString().c_str());
 
     if(found_devs.full()) return;
-
     found_devs.push_back(dev);
-
-    const char* name = dev->getName().c_str();
-    lv_obj_t *btn;
-    char msg[50];
-    if(strcmp(name, "MicroRC") == 0) {
-        snprintf(msg, sizeof(msg), "%s (%s)",
-            name,
-            dev->getAddress().toString().c_str()
-        );
-    } else {
-        snprintf(msg, sizeof(msg), "%s", name);
-    }
-    btn = lv_list_add_button(list_devs, nullptr, msg);
-    lv_obj_add_event_cb(btn, on_dev_selected, LV_EVENT_CLICKED, dev);
 }
 
 void on_battery_updated(uint8_t val) {
@@ -199,8 +179,13 @@ void set_screen_padding(lv_obj_t *scr) {
 void create_devices_screen(lv_obj_t *scr) {
     set_screen_padding(scr);
 
+    // lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
+    // lv_obj_t *l = lv_label_create(scr);
+    // lv_label_set_text(l, "Receivers found:");
+
     list_devs = lv_list_create(scr);
     lv_obj_set_size(list_devs, lv_pct(100), lv_pct(100));
+    //lv_obj_set_flex_grow(list_devs, 1);
 }
 
 void create_control_screen(lv_obj_t *scr) {
@@ -311,15 +296,14 @@ void setup () {
     lv_group_set_default(g);
     scr_devices = lv_screen_active();
     create_devices_screen(scr_devices);
-    lv_list_add_text(list_devs, "PREVED");
-    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    lv_obj_add_event_cb(scr_devices, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, g);
 
     //####### control screen
     g = lv_group_create();
     lv_group_set_default(g);
     scr_control = lv_obj_create(nullptr);
     create_control_screen(scr_control);
-    lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    lv_obj_add_event_cb(scr_control, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, g);
 
     //###### Device settings
     scr_dev_settings = lv_obj_create(nullptr);
@@ -327,10 +311,12 @@ void setup () {
     g = lv_group_create();
     lv_group_set_default(g);
     dev_settings::create_ui(scr_dev_settings);
-    lv_obj_add_event_cb(scr_dev_settings, scr_load_cb, LV_EVENT_SCREEN_LOADED, g);
+    lv_obj_add_event_cb(scr_dev_settings, scr_load_cb, LV_EVENT_SCREEN_LOAD_START, g);
     dev_settings::screen_back = scr_control;
 
     // lv_group_set_default(lv_indev_get_group(indev));
+
+    lv_obj_send_event(scr_devices, LV_EVENT_SCREEN_LOAD_START, nullptr);
 
     ble::init();
     ble::set_dev_found_cb(on_dev_found);
@@ -400,15 +386,15 @@ void read_controls_input() {
     int x = analogRead(PIN_JX);
     int y = analogRead(PIN_JY);
     bool down = digitalRead(PIN_J);
-    x = -to_centered(x, 465, 10);
-    y = to_centered(y, 445, 10);
+    x = -to_centered(x, 465, 2);
+    y = to_centered(y, 445, 2);
 
     static int last_x=-1000, last_y=0;
     if(x!=last_x || y!=last_y) {
         char msg[32];
         int sx = 128 + x*128/512, sy = 128 + y*128/512;
-        sx = constrain(sx, 0, 255);
-        sy = constrain(sy, 0, 255);
+        sx = constrain(sx, 1, 255);
+        sy = constrain(sy, 1, 255);
         snprintf(msg, sizeof(msg), "1=%d\n0=%d\n",
             sx,
             sy
@@ -491,6 +477,38 @@ void loop () {
 
     lv_timer_handler();
 
+    if(lv_screen_active() == scr_devices) {
+        size_t cnt = lv_obj_get_child_count(list_devs);
+        cnt--;
+        if(found_devs.size() > cnt) {
+            for(size_t i=cnt; i<found_devs.size(); i++) {
+                auto &dev = found_devs[i];
+
+                const char* name = dev->getName().c_str();
+                lv_obj_t *btn;
+                char msg[50];
+                if(strcmp(name, "MicroRC") == 0) {
+                    snprintf(msg, sizeof(msg), "%s (%s)",
+                        name,
+                        dev->getAddress().toString().c_str()
+                    );
+                } else {
+                    snprintf(msg, sizeof(msg), "%s", name);
+                }
+                btn = lv_list_add_button(list_devs, nullptr, msg);
+                lv_obj_add_event_cb(btn, on_dev_selected, LV_EVENT_CLICKED, dev);
+            }
+
+        }
+    }
+
     delay(5);
 
+}
+
+
+extern "C" void my_lvgl_print(lv_log_level_t level, const char * buf) {
+    LV_UNUSED(level);
+    Serial.print(buf);
+    Serial.flush();
 }
