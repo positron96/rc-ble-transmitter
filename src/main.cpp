@@ -57,7 +57,6 @@ static void update_connected(bool c) {
         //lv_screen_load(scr_control);
         lv_screen_load_anim(scr_control, LV_SCR_LOAD_ANIM_MOVE_LEFT, 300, 0, false);
     } else {
-        ble::start_scan();
         lv_obj_add_flag(im_bt, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lb_batt_rem, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(im_batt_rem, LV_OBJ_FLAG_HIDDEN);
@@ -65,6 +64,7 @@ static void update_connected(bool c) {
 
         lv_obj_clean(list_devs);
         lv_list_add_text(list_devs, "Receivers found:");
+        ble::start_scan();
 
         //lv_screen_load(scr_devices);
         lv_screen_load_anim(scr_devices, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 300, 0, false);
@@ -85,6 +85,7 @@ static void scr_load_cb(lv_event_t * e) {
 static void on_dev_selected(lv_event_t * e) {
     NimBLEAdvertisedDevice *dev = (NimBLEAdvertisedDevice*)lv_event_get_user_data(e);
     if(ble::connect(dev)) {
+        lv_obj_clean(list_devs);
         update_connected(true);
     } else {
         Serial.println("Could not connect, not switching");
@@ -103,7 +104,7 @@ void on_battery_updated(uint8_t val) {
 }
 
 void on_ble_rx(const std::string &res) {
-    ble_rx_str = res;
+    ble_rx_str = ">" + res;
 }
 
 void on_dev_disconnected(NimBLEClient *dev) {
@@ -348,20 +349,6 @@ T rdiv(const T x, const U y) {
     }
 }
 
-int16_t to_centered(const uint16_t v, const uint16_t center = 512, const uint16_t deadzone = 0) {
-    //constexpr uint8_t center = 512;
-    constexpr uint16_t in_range = 512;
-    const uint16_t out_range = in_range - deadzone;
-    int16_t ret = v - center;
-    if(deadzone != 0) {
-        uint16_t mag = abs(ret);
-        if(mag < deadzone) return 0;
-        else return (ret>0?1:-1) * rdiv((mag-deadzone)*in_range, out_range);
-    } else {
-        return ret;
-    }
-}
-
 
 /** Returns -1, 0, 1 if pin is LOW, floating and HIGH. */
 int read_tristate(int pin) {
@@ -391,29 +378,50 @@ void set_checked_state(lv_obj_t *obj, bool checked) {
     }
 }
 
+struct JoystickRange {
+    uint16_t low, mid, hi;
+};
+
+int16_t to_centered(const uint16_t v, const JoystickRange &in_range, const uint16_t deadzone = 0) {
+    int16_t out_hrange = 512;
+    uint16_t lo;
+    uint16_t hi;
+    if(v < in_range.mid - deadzone) {
+        hi = in_range.low;
+        lo = in_range.mid - deadzone;
+        out_hrange = -out_hrange;
+    } else if(v > in_range.mid + deadzone) {
+        lo = in_range.mid + deadzone;
+        hi = in_range.hi;
+    } else return 0;
+
+    return (v - lo) * out_hrange / (hi - lo);
+
+}
+
 void read_controls_input() {
+    //bool down = digitalRead(PIN_J);
     int raw_x = analogRead(PIN_JX);
     int raw_y = analogRead(PIN_JY);
 
     char msg[32];
 
-    bool down = digitalRead(PIN_J);
-    int x = -to_centered(raw_x, 470, 2);  //  1023 -- 465 -- 0
-    int y = to_centered(raw_y, 462, 2);  // 1023 -- 460 -- 20
+    constexpr JoystickRange RX{0, 465, 1023};
+    constexpr JoystickRange RY{17, 460, 1023};
+
+    int x = - to_centered(raw_x, RX, 10);
+    int y = to_centered(raw_y, RY, 10);
 
     snprintf(msg, sizeof(msg), "%d (%d)\n%d (%d)\n", raw_x, x, raw_y, y);
     lv_label_set_text(pnl_inputs, msg);
 
     static int last_x=-1000, last_y=0;
     if(x!=last_x || y!=last_y) {
-        char msg[32];
+        //char msg[32];
         int sx = 128 + x*128/512, sy = 128 + y*128/512;
         sx = constrain(sx, 1, 255);
         sy = constrain(sy, 1, 255);
-        snprintf(msg, sizeof(msg), "1=%d\n0=%d\n",
-            sx,
-            sy
-        );
+        snprintf(msg, sizeof(msg), "1=%d\n0=%d\n", sx, sy);
         ble::send(msg);
 
         // lv_obj_t *ball = lv_obj_get_child(pnl_inputs, 0);
