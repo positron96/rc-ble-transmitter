@@ -10,6 +10,7 @@ namespace ble {
 
     static dev_found_cb_t dev_found_cb = nullptr;
     static dev_disconnected_cb_t disconnected_cb = nullptr;
+    static rx_callback_t rx_cb = nullptr;
 
     void set_dev_found_cb(dev_found_cb_t cb) {
         dev_found_cb = cb;
@@ -17,6 +18,10 @@ namespace ble {
 
     void set_disconnected_cb(dev_disconnected_cb_t cb) {
         disconnected_cb = cb;
+    }
+
+    void set_rx_cb(rx_callback_t cb) {
+        rx_cb = cb;
     }
 
 
@@ -145,13 +150,15 @@ namespace ble {
     /** Notification / Indication receiving handler callback */
     void on_rx(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify){
         std::string str = (isNotify == true) ? "Notification" : "Indication";
-        str += " from ";
-        /** NimBLEAddress and NimBLEUUID have std::string operators */
-        str += std::string(pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress());
-        str += ": Service = " + std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
-        str += ", Characteristic = " + std::string(pRemoteCharacteristic->getUUID());
-        str += ", Value = " + std::string((char*)pData, length);
-        Serial.println(str.c_str());
+        str +=
+        //    + std::string(pRemoteCharacteristic->getRemoteService()->getClient()->getPeerAddress())
+        //    + ": Service = " + std::string(pRemoteCharacteristic->getRemoteService()->getUUID());
+            std::string(", Characteristic=") + std::string(pRemoteCharacteristic->getUUID())
+            + " = '" + std::string((char*)pData, length) + "'";
+        Serial.print(str.c_str());
+        if(rx_cb != nullptr) {
+            rx_cb(std::string((char*)pData, length));
+        }
     }
 
     void update_battery_value(uint8_t val) {
@@ -340,6 +347,7 @@ namespace ble {
 
     bool send(const char* msg) {
         if(char_tx == nullptr) return false;
+        //Serial.println(msg);
         char_tx->writeValue(msg);
         return true;
     }

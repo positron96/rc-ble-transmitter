@@ -13,6 +13,7 @@ namespace ble {
     using dev_found_cb_t = std::add_pointer_t<void(NimBLEAdvertisedDevice*)>;
     using dev_disconnected_cb_t = std::add_pointer_t<void(NimBLEClient*)>;
     using battery_callback_t = std::add_pointer_t<void(uint8_t)>;
+    using rx_callback_t = std::add_pointer_t<void(const std::string&)>;
 
     void init();
 
@@ -30,6 +31,7 @@ namespace ble {
     void set_battery_update_cb(battery_callback_t);
     void set_dev_found_cb(dev_found_cb_t);
     void set_disconnected_cb(dev_disconnected_cb_t);
+    void set_rx_cb(rx_callback_t);
 
 };
 
