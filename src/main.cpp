@@ -228,25 +228,27 @@ void create_control_screen(lv_obj_t *scr) {
     lv_obj_set_user_data(b, (int*)2);
     bt_functions[0] = b;
 
-    b = lv_button_create(l);
-    lv_label_set_text(lv_label_create(b), "Marker");
-    //lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
-    lv_group_remove_obj(b);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_user_data(b, (int*)3);
-    bt_functions[1] = b;
+    // b = lv_button_create(l);
+    // lv_label_set_text(lv_label_create(b), "Marker");
+    // //lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
+    // lv_group_remove_obj(b);
+    // lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    // lv_obj_set_user_data(b, (int*)3);
+    // bt_functions[1] = b;
 
     b = lv_button_create(l);
     lv_label_set_text(lv_label_create(b), "<");
     lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_group_remove_obj(b);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_user_data(b, (int*)3);
     bt_functions[2] = b;
     b = lv_button_create(l);
     lv_label_set_text(lv_label_create(b), ">");
     lv_group_remove_obj(b);
     lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_user_data(b, (int*)4);
     bt_functions[3] = b;
 
     b = lv_button_create(l);
@@ -362,6 +364,7 @@ int read_tristate(int pin) {
 }
 
 void set_checked_state(lv_obj_t *obj, bool checked) {
+    if(obj==nullptr) return;
     bool cur = lv_obj_has_state(obj, LV_STATE_CHECKED);//lv_led_get_brightness(obj) == LV_LED_BRIGHT_MAX;
     if(cur!=checked) {
         lv_obj_set_state(obj, LV_STATE_CHECKED, checked);
@@ -407,7 +410,7 @@ void read_controls_input() {
     char msg[32];
 
     constexpr JoystickRange RX{0, 465, 1023};
-    constexpr JoystickRange RY{17, 460, 1023};
+    constexpr JoystickRange RY{20, 460, 1023};
 
     int x = - to_centered(raw_x, RX, 10);
     int y = to_centered(raw_y, RY, 10);
