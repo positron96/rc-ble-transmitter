@@ -153,16 +153,6 @@ static uint32_t my_tick(void) {
 }
 
 
-void fn_cb(lv_event_t *e) {
-    lv_obj_t* obj = (lv_obj_t*)lv_event_get_target(e);
-    int fn = (int)lv_event_get_user_data(e);
-    if(fn==0) return;
-    bool v = lv_obj_has_state(obj, LV_STATE_CHECKED);
-    char msg[32];
-    snprintf(msg, sizeof(msg), "%d=%d\n", fn, v?255:0);
-    ble::send(msg);
-}
-
 #if LV_USE_LOG != 0
 void my_print( lv_log_level_t level, const char * buf )
 {
@@ -197,6 +187,8 @@ void create_devices_screen(lv_obj_t *scr) {
     //lv_obj_set_flex_grow(list_devs, 1);
 }
 
+extern "C" const lv_image_dsc_t img_headlights;
+
 void create_control_screen(lv_obj_t *scr) {
     set_screen_padding(scr);
 
@@ -221,10 +213,12 @@ void create_control_screen(lv_obj_t *scr) {
 
     lv_obj_t *b;
 
-    b = lv_button_create(l);
-    lv_label_set_text(lv_label_create(b), "Headlight");
-    lv_group_remove_obj(b);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    //b = lv_button_create(l);
+    //lv_label_set_text(lv_label_create(b), "Headlight");
+    // lv_group_remove_obj(b);
+    // lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    b = lv_image_create(l);
+    lv_image_set_src(b, &img_headlights);
     lv_obj_set_user_data(b, (int*)2);
     bt_functions[0] = b;
 
@@ -373,7 +367,7 @@ void set_checked_state(lv_obj_t *obj, bool checked) {
         int fn = (int)lv_obj_get_user_data(obj);
         if(fn!=0) {
             char msg[32];
-            snprintf(msg, sizeof(msg), "%d=%d\n", fn, checked?255:0);
+            snprintf(msg, sizeof(msg), "%d=%d\n", fn, checked?127:0);
             ble::send(msg);
         }
 
@@ -422,8 +416,8 @@ void read_controls_input() {
     if(x!=last_x || y!=last_y) {
         //char msg[32];
         int sx = 128 + x*128/512, sy = 128 + y*128/512;
-        sx = constrain(sx, 1, 255);
-        sy = constrain(sy, 1, 255);
+        sx = constrain(sx, -128, 127);
+        sy = constrain(sy, -128, 127);
         snprintf(msg, sizeof(msg), "1=%d\n0=%d\n", sx, sy);
         ble::send(msg);
 
