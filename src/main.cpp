@@ -213,14 +213,17 @@ void create_control_screen(lv_obj_t *scr) {
 
     lv_obj_t *b;
 
-    //b = lv_button_create(l);
-    //lv_label_set_text(lv_label_create(b), "Headlight");
-    // lv_group_remove_obj(b);
-    // lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_color_t col_img_normal = lv_color_hex(0x6666AA);
+    lv_color_t col_img_active = lv_color_hex(0xFFFF00);
+
     b = lv_image_create(l);
     lv_image_set_src(b, &img_headlights);
     lv_obj_set_user_data(b, (int*)2);
     bt_functions[0] = b;
+    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_style_image_recolor_opa(b, 255, 0);
+    lv_obj_set_style_image_recolor(b, col_img_normal, LV_STATE_DEFAULT);
+    lv_obj_set_style_image_recolor(b, col_img_active, LV_STATE_CHECKED);
 
     // b = lv_button_create(l);
     // lv_label_set_text(lv_label_create(b), "Marker");
@@ -235,14 +238,14 @@ void create_control_screen(lv_obj_t *scr) {
     lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_group_remove_obj(b);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_user_data(b, (int*)3);
+    lv_obj_set_user_data(b, (int*)4);
     bt_functions[2] = b;
     b = lv_button_create(l);
     lv_label_set_text(lv_label_create(b), ">");
     lv_group_remove_obj(b);
     lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_user_data(b, (int*)4);
+    lv_obj_set_user_data(b, (int*)3);
     bt_functions[3] = b;
 
     b = lv_button_create(l);
@@ -362,7 +365,6 @@ void set_checked_state(lv_obj_t *obj, bool checked) {
     bool cur = lv_obj_has_state(obj, LV_STATE_CHECKED);//lv_led_get_brightness(obj) == LV_LED_BRIGHT_MAX;
     if(cur!=checked) {
         lv_obj_set_state(obj, LV_STATE_CHECKED, checked);
-        //lv_led_set_brightness(obj, checked ? LV_LED_BRIGHT_MAX : LV_LED_BRIGHT_MIN);
 
         int fn = (int)lv_obj_get_user_data(obj);
         if(fn!=0) {
@@ -415,7 +417,7 @@ void read_controls_input() {
     static int last_x=-1000, last_y=0;
     if(x!=last_x || y!=last_y) {
         //char msg[32];
-        int sx = 128 + x*128/512, sy = 128 + y*128/512;
+        int sx = x*128/512, sy = y*128/512;
         sx = constrain(sx, -128, 127);
         sy = constrain(sy, -128, 127);
         snprintf(msg, sizeof(msg), "1=%d\n0=%d\n", sx, sy);
