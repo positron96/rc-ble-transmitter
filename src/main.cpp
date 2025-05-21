@@ -45,6 +45,7 @@ static lv_obj_t *pnl_inputs;
 static lv_obj_t *scr_devices;
 static lv_obj_t *scr_control;
 static lv_obj_t *scr_dev_settings;
+
 static etl::array<lv_obj_t*, 4> bt_functions;
 
 static void update_connected(bool c) {
@@ -188,6 +189,23 @@ void create_devices_screen(lv_obj_t *scr) {
 }
 
 extern "C" const lv_image_dsc_t img_headlights;
+extern "C" const lv_image_dsc_t img_markerlights;
+extern "C" const lv_image_dsc_t img_hazard;
+extern "C" const lv_image_dsc_t img_left;
+extern "C" const lv_image_dsc_t img_right;
+
+lv_color_t col_img_normal = lv_color_hex(0x6666AA);
+lv_color_t col_img_active = lv_color_hex(0xFFFF00);
+
+void configure_img(lv_obj_t *img, size_t fn_idx, int data) {
+    lv_obj_set_user_data(img, (int*)data);
+    bt_functions[fn_idx] = img;
+    lv_obj_add_flag(img, LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_set_style_image_recolor_opa(img, 255, 0);
+    lv_obj_set_style_image_recolor(img, col_img_normal, LV_STATE_DEFAULT);
+    lv_obj_set_style_image_recolor(img, col_img_active, LV_STATE_CHECKED);
+}
+
 
 void create_control_screen(lv_obj_t *scr) {
     set_screen_padding(scr);
@@ -211,42 +229,28 @@ void create_control_screen(lv_obj_t *scr) {
     lv_obj_set_style_pad_top(l, 5, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(l, 5, LV_PART_MAIN);
 
+    lv_obj_t *img;
+
+    img = lv_image_create(l);
+    lv_image_set_src(img, &img_headlights);
+    configure_img(img, 0, 2);
+
+    // img = lv_image_create(l);
+    // lv_image_set_src(img, &img_markerlights);
+    // configure_img(img, 1, 3);
+
+    // img = lv_image_create(l);
+    // lv_image_set_src(img, &img_hazard);
+    // configure_img(img, );
+
+    img = lv_image_create(l);
+    lv_image_set_src(img, &img_left);
+    configure_img(img, 2, 4);
+    img = lv_image_create(l);
+    lv_image_set_src(img, &img_right);
+    configure_img(img, 3, 3);
+
     lv_obj_t *b;
-
-    lv_color_t col_img_normal = lv_color_hex(0x6666AA);
-    lv_color_t col_img_active = lv_color_hex(0xFFFF00);
-
-    b = lv_image_create(l);
-    lv_image_set_src(b, &img_headlights);
-    lv_obj_set_user_data(b, (int*)2);
-    bt_functions[0] = b;
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_style_image_recolor_opa(b, 255, 0);
-    lv_obj_set_style_image_recolor(b, col_img_normal, LV_STATE_DEFAULT);
-    lv_obj_set_style_image_recolor(b, col_img_active, LV_STATE_CHECKED);
-
-    // b = lv_button_create(l);
-    // lv_label_set_text(lv_label_create(b), "Marker");
-    // //lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
-    // lv_group_remove_obj(b);
-    // lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    // lv_obj_set_user_data(b, (int*)3);
-    // bt_functions[1] = b;
-
-    b = lv_button_create(l);
-    lv_label_set_text(lv_label_create(b), "<");
-    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
-    lv_group_remove_obj(b);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_user_data(b, (int*)4);
-    bt_functions[2] = b;
-    b = lv_button_create(l);
-    lv_label_set_text(lv_label_create(b), ">");
-    lv_group_remove_obj(b);
-    lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(b, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_user_data(b, (int*)3);
-    bt_functions[3] = b;
 
     b = lv_button_create(l);
     lv_image_set_src(lv_image_create(b), LV_SYMBOL_SETTINGS);
