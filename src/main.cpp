@@ -46,7 +46,7 @@ static lv_obj_t *scr_devices;
 static lv_obj_t *scr_control;
 static lv_obj_t *scr_dev_settings;
 
-static etl::array<lv_obj_t*, 4> bt_functions;
+static etl::array<lv_obj_t*, 10> bt_functions;
 
 static void update_connected(bool c) {
     if(c) {
@@ -189,7 +189,7 @@ void create_devices_screen(lv_obj_t *scr) {
 }
 
 extern "C" const lv_image_dsc_t img_headlights;
-extern "C" const lv_image_dsc_t img_markerlights;
+//extern "C" const lv_image_dsc_t img_markerlights;
 extern "C" const lv_image_dsc_t img_hazard;
 extern "C" const lv_image_dsc_t img_left;
 extern "C" const lv_image_dsc_t img_right;
@@ -197,8 +197,8 @@ extern "C" const lv_image_dsc_t img_right;
 lv_color_t col_img_normal = lv_color_hex(0x6666AA);
 lv_color_t col_img_active = lv_color_hex(0xFFFF00);
 
-void configure_img(lv_obj_t *img, size_t fn_idx, int data) {
-    lv_obj_set_user_data(img, (int*)data);
+void configure_img(lv_obj_t *img, size_t fn_idx, char channel) {
+    lv_obj_set_user_data(img, (int*)(int)channel);
     bt_functions[fn_idx] = img;
     lv_obj_add_flag(img, LV_OBJ_FLAG_CHECKABLE);
     lv_obj_set_style_image_recolor_opa(img, 255, 0);
@@ -233,22 +233,22 @@ void create_control_screen(lv_obj_t *scr) {
 
     img = lv_image_create(l);
     lv_image_set_src(img, &img_headlights);
-    configure_img(img, 0, 2);
+    configure_img(img, 0, 'H');
 
     // img = lv_image_create(l);
     // lv_image_set_src(img, &img_markerlights);
-    // configure_img(img, 1, 3);
+    // configure_img(img, 1, 'M');
 
-    // img = lv_image_create(l);
-    // lv_image_set_src(img, &img_hazard);
-    // configure_img(img, );
+    img = lv_image_create(l);
+    lv_image_set_src(img, &img_hazard);
+    configure_img(img, 2, 'E');
 
     img = lv_image_create(l);
     lv_image_set_src(img, &img_left);
-    configure_img(img, 2, 4);
+    configure_img(img, 3, 'L');
     img = lv_image_create(l);
     lv_image_set_src(img, &img_right);
-    configure_img(img, 3, 3);
+    configure_img(img, 4, 'R');
 
     lv_obj_t *b;
 
@@ -365,15 +365,15 @@ int read_tristate(int pin) {
 }
 
 void set_checked_state(lv_obj_t *obj, bool checked) {
-    if(obj==nullptr) return;
+    if(obj==nullptr) { Serial.println("Object is null!"); return;}
     bool cur = lv_obj_has_state(obj, LV_STATE_CHECKED);//lv_led_get_brightness(obj) == LV_LED_BRIGHT_MAX;
     if(cur!=checked) {
         lv_obj_set_state(obj, LV_STATE_CHECKED, checked);
 
-        int fn = (int)lv_obj_get_user_data(obj);
+        char fn = (char)(int)lv_obj_get_user_data(obj);
         if(fn!=0) {
             char msg[32];
-            snprintf(msg, sizeof(msg), "%d=%d\n", fn, checked?127:0);
+            snprintf(msg, sizeof(msg), "%c=%d\n", fn, checked?127:0);
             ble::send(msg);
         }
 
@@ -422,9 +422,9 @@ void read_controls_input() {
     if(x!=last_x || y!=last_y) {
         //char msg[32];
         int sx = x*128/512, sy = y*128/512;
-        sx = constrain(sx, -128, 127);
-        sy = constrain(sy, -128, 127);
-        snprintf(msg, sizeof(msg), "1=%d\n0=%d\n", sx, sy);
+        sx = constrain(sx, -127, 127);
+        sy = constrain(sy, -127, 127);
+        snprintf(msg, sizeof(msg), "S=%d\nD=%d\n", sx, sy);
         ble::send(msg);
 
         // lv_obj_t *ball = lv_obj_get_child(pnl_inputs, 0);
@@ -434,19 +434,19 @@ void read_controls_input() {
     last_y = y;
 
     bool st = digitalRead(PIN_SWITCHES[1]) == LOW;
-    set_checked_state(bt_functions[0], st);
+    set_checked_state(bt_functions[0], st); // headlight
 
     st = digitalRead(PIN_SWITCHES[2]) == LOW;
-    set_checked_state(bt_functions[1], st);
+    set_checked_state(bt_functions[2], st); // emergency
 
     int t = read_tristate(PIN_BLINKER);
     if(t>0) {
         set_checked_state(bt_functions[3], true);
     } else if(t<0) {
-        set_checked_state(bt_functions[2], true);
+        set_checked_state(bt_functions[4], true);
     } else {
         set_checked_state(bt_functions[3], false);
-        set_checked_state(bt_functions[2], false);
+        set_checked_state(bt_functions[4], false);
     }
 }
 
